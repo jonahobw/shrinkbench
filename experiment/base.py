@@ -1,3 +1,4 @@
+import os
 from abc import ABC, abstractmethod
 import datetime
 import hashlib
@@ -22,8 +23,9 @@ class Experiment(ABC):
         self._params = {"experiment": self.__class__.__name__, 'params': {}}
         self.seed = seed
         self.frozen = False
-        signal.signal(signal.SIGINT, self.SIGINT_handler)
-        signal.signal(signal.SIGQUIT, self.SIGQUIT_handler)
+        if not os.name == 'nt':
+            signal.signal(signal.SIGINT, self.SIGINT_handler)
+            signal.signal(signal.SIGQUIT, self.SIGQUIT_handler)
 
     def add_params(_self, **kwargs):
         if not _self.frozen:
@@ -102,6 +104,8 @@ class Experiment(ABC):
     def build_logging(self, metrics, path=None, csv=True, tensorboard=False):
         if path is None:
             self.path = self.get_path()
+        else:
+            self.path = self.path / self.uid
         printc(f"Logging results to {self.path}", color='MAGENTA')
         self.path.mkdir(exist_ok=True, parents=True)
         self.save_params()

@@ -40,7 +40,24 @@ class TrainingExperiment(Experiment):
                  pretrained=False,
                  resume=None,
                  resume_optim=False,
-                 save_freq=10):
+                 save_freq=10,
+                 best_top1 = 0):
+        '''
+
+        :param dataset:
+        :param model:
+        :param seed:
+        :param path:
+        :param dl_kwargs:
+        :param train_kwargs:
+        :param debug:
+        :param pretrained:
+        :param resume:
+        :param resume_optim:
+        :param save_freq:
+        :param best_top1: used for when you want to restart training from a previous checkpoint and save the
+                model with the best_top1 so far
+        '''
 
         # Default children kwargs
         super(TrainingExperiment, self).__init__(seed)
@@ -50,6 +67,8 @@ class TrainingExperiment(Experiment):
         params = locals()
         params['dl_kwargs'] = dl_kwargs
         params['train_kwargs'] = train_kwargs
+        if path is not None:
+            params['path'] = str(path)
         self.add_params(**params)
         # Save params
 
@@ -144,11 +163,12 @@ class TrainingExperiment(Experiment):
         try:
             for epoch in range(self.epochs):
                 printc(f"Start epoch {epoch}", color='YELLOW')
-                self.train(epoch)
-                self.eval(epoch)
+                loss, acc1, acc5 = self.train(epoch)
+                val_los, val_acc1, val_acc5 = self.eval(epoch)
                 # Checkpoint epochs
-                # TODO Model checkpointing based on best val loss/acc
-                if epoch % self.save_freq == 0:
+                if hasattr(self, 'best_top1') and acc1 > self.best_top1:
+                    self.checkpoint()
+                elif epoch % self.save_freq == 0:
                     self.checkpoint()
                 # TODO Early stopping
                 # TODO ReduceLR on plateau?
