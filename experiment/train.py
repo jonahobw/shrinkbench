@@ -19,30 +19,34 @@ from ..util import printc, OnlineStats
 
 class TrainingExperiment(Experiment):
 
-    default_dl_kwargs = {'batch_size': 128,
-                         'pin_memory': False,
-                         'num_workers': 8
-                         }
+    default_dl_kwargs = {"batch_size": 128, "pin_memory": False, "num_workers": 8}
 
-    default_train_kwargs = {'optim': 'SGD',
-                            'epochs': 30,
-                            'lr': 1e-3,
-                            }
+    default_train_kwargs = {
+        "optim": "SGD",
+        "epochs": 30,
+        "lr": 1e-3,
+    }
 
-    def __init__(self,
-                 dataset,
-                 model,
-                 seed=42,
-                 path=None,
-                 dl_kwargs=dict(),
-                 train_kwargs=dict(),
-                 debug=False,
-                 pretrained=False,
-                 resume=None,
-                 resume_optim=False,
-                 save_freq=10,
-                 best_top1 = 0):
-        '''
+    def __init__(
+        self,
+        dataset,
+        model,
+        seed=42,
+        path=None,
+        dl_kwargs=dict(),
+        train_kwargs=dict(),
+        debug=False,
+        pretrained=False,
+        resume=None,
+        resume_optim=False,
+        save_freq=10,
+        checkpoint_metric=None,
+        early_stop = None,
+        lr_schedule = None,
+        gpu = None
+    ):
+
+        """
 
         :param dataset:
         :param model:
@@ -55,20 +59,33 @@ class TrainingExperiment(Experiment):
         :param resume:
         :param resume_optim:
         :param save_freq:
-        :param best_top1: used for when you want to restart training from a previous checkpoint and save the
-                model with the best_top1 so far
-        '''
+        :param checkpoint_metric: either 'top1_acc', 'top5_acc', or 'train_loss' and then during training the model
+            with the best metric is saved
+        :param early_stop: gives a method to implement early stopping,
+        :param gpu: integer of gpu to run on
+        """
 
         # Default children kwargs
         super(TrainingExperiment, self).__init__(seed)
         dl_kwargs = {**self.default_dl_kwargs, **dl_kwargs}
         train_kwargs = {**self.default_train_kwargs, **train_kwargs}
 
+        self.resume = resume
+        self.path = path
+        self.save_freq = save_freq
+
+        # the metric that will be used to find the best model
+        self.checkpoint_metric = checkpoint_metric
+        # value of the best model metric
+        self.best_metrics = None
+        self.gpu = gpu
+
         params = locals()
-        params['dl_kwargs'] = dl_kwargs
-        params['train_kwargs'] = train_kwargs
+        params["dl_kwargs"] = dl_kwargs
+        params["train_kwargs"] = train_kwargs
+        params.pop('lr_schedule')
         if path is not None:
-            params['path'] = str(path)
+            params["path"] = str(path)
         self.add_params(**params)
         # Save params
 
@@ -78,12 +95,31 @@ class TrainingExperiment(Experiment):
 
         self.build_train(resume_optim=resume_optim, **train_kwargs)
 
-        self.path = path
-        self.save_freq = save_freq
+    def check_best_metric(self, metrics):
+        """
+        Returns true if a model metric is the best seen so far.
+
+        :return: True if metric is the best seen so far, else False
+        """
+
+        # function has not been called yet, set the best metric to worst case
+        if self.best_metrics is None:
+            self.best_metrics = metrics
+            return True
+
+        # compare the new metric value with the best seen and update state if new metric is better
+        if 'loss' in self.checkpoint_metric and metrics[self.checkpoint_metric] < self.best_metrics[self.checkpoint_metric]:
+            self.best_metrics = metrics
+            return True
+        if 'acc' in self.checkpoint_metric and metrics[self.checkpoint_metric] > self.best_metrics[
+            self.checkpoint_metric]:
+            return True
+
+        return False
 
     def run(self):
         self.freeze()
-        printc(f"Running {repr(self)}", color='YELLOW')
+        printc(f"Running {repr(self)}", color="YELLOW")
         self.to_device()
         self.build_logging(self.train_metrics, self.path)
         self.run_epochs()
@@ -105,7 +141,9 @@ class TrainingExperiment(Experiment):
                 model = getattr(torchvision.models, model)(pretrained=pretrained)
                 mark_classifier(model)  # add is_classifier attribute
             else:
-                raise ValueError(f"Model {model} not available in custom models or torchvision models")
+                raise ValueError(
+                    f"Model {model} not available in custom models or torchvision models"
+                )
 
         self.model = model
 
@@ -113,12 +151,12 @@ class TrainingExperiment(Experiment):
             self.resume = pathlib.Path(self.resume)
             assert self.resume.exists(), "Resume path does not exist"
             previous = torch.load(self.resume)
-            self.model.load_state_dict(previous['model_state_dict'])
+            self.model.load_state_dict(previous["model_state_dict"])
 
     def build_train(self, optim, epochs, resume_optim=False, **optim_kwargs):
         default_optim_kwargs = {
-            'SGD': {'momentum': 0.9, 'nesterov': True, 'lr': 1e-3},
-            'Adam': {'momentum': 0.9, 'betas': (.9, .99), 'lr': 1e-4}
+            "SGD": {"momentum": 0.9, "nesterov": True, "lr": 1e-3},
+            "Adam": {"momentum": 0.9, "betas": (0.9, 0.99), "lr": 1e-4},
         }
 
         self.epochs = epochs
@@ -135,57 +173,78 @@ class TrainingExperiment(Experiment):
         if resume_optim:
             assert hasattr(self, "resume"), "Resume must be given for resume_optim"
             previous = torch.load(self.resume)
-            self.optim.load_state_dict(previous['optim_state_dict'])
+            self.optim.load_state_dict(previous["optim_state_dict"])
 
         # Assume classification experiment
         self.loss_func = nn.CrossEntropyLoss()
 
     def to_device(self):
         # Torch CUDA config
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if self.gpu is not None:
+            try:
+                self.device = torch.device(f"cuda:{self.gpu}")
+            except AssertionError as e:
+                printc(e, color="ORANGE")
         if not torch.cuda.is_available():
             printc("GPU NOT AVAILABLE, USING CPU!", color="ORANGE")
         self.model.to(self.device)
-        cudnn.benchmark = True   # For fast training.
+        cudnn.benchmark = True  # For fast training.
 
     def checkpoint(self):
-        checkpoint_path = self.path / 'checkpoints'
+        checkpoint_path = self.path / "checkpoints"
         checkpoint_path.mkdir(exist_ok=True, parents=True)
         epoch = self.log_epoch_n
-        torch.save({
-            'model_state_dict': self.model.state_dict(),
-            'optim_state_dict': self.optim.state_dict()
-        }, checkpoint_path / f'checkpoint-{epoch}.pt')
+        torch.save(
+            {
+                "model_state_dict": self.model.state_dict(),
+                "optim_state_dict": self.optim.state_dict(),
+            },
+            checkpoint_path / f"checkpoint-{epoch}.pt",
+        )
 
     def run_epochs(self):
 
         since = time.time()
         try:
+            # optionally set up the optimizer to adjust learning rate during training
+            if hasattr(self, 'lr_schedule'):
+                scheduler = torch.optim.lr_scheduler.LambdaLR(self.optim, self.lr_schedule, verbose=True)
             for epoch in range(self.epochs):
-                printc(f"Start epoch {epoch}", color='YELLOW')
+                printc(f"Start epoch {epoch}", color="YELLOW")
                 loss, acc1, acc5 = self.train(epoch)
-                val_los, val_acc1, val_acc5 = self.eval(epoch)
-                # Checkpoint epochs
-                if hasattr(self, 'best_top1') and acc1 > self.best_top1:
+                val_loss, val_acc1, val_acc5 = self.eval(epoch)
+
+                metrics = {'train_loss': loss, 'train_acc1': acc1, 'train_acc5':acc5, 'val_loss': val_loss, 'val_acc1': val_acc1, 'val_acc5': val_acc5}
+                # Checkpoint epochs if it is the best model seen so far or if save frequency is triggered
+                if (
+                    hasattr(self, "checkpoint_metric")
+                    and self.check_best_metric(metrics)
+                ):
                     self.checkpoint()
                 elif epoch % self.save_freq == 0:
                     self.checkpoint()
-                # TODO Early stopping
-                # TODO ReduceLR on plateau?
-                self.log(timestamp=time.time()-since)
+                # optionally update the learning rate
+                if hasattr(self, 'lr_schedule'):
+                    scheduler.step()
+
+                self.log(timestamp=time.time() - since)
                 self.log_epoch(epoch)
 
+                # optionally stop early
+                if hasattr(self, 'early_stop') and self.stop_early(metrics):
+                    break
 
         except KeyboardInterrupt:
-            printc(f"\nInterrupted at epoch {epoch}. Tearing Down", color='RED')
+            printc(f"\nInterrupted at epoch {epoch}. Tearing Down", color="RED")
 
     def run_epoch(self, train, epoch=0):
         if train:
             self.model.train()
-            prefix = 'train'
+            prefix = "train"
             dl = self.train_dl
         else:
-            prefix = 'val'
+            prefix = "val"
             dl = self.val_dl
             self.model.eval()
 
@@ -212,13 +271,17 @@ class TrainingExperiment(Experiment):
                 acc1.add(c1 / dl.batch_size)
                 acc5.add(c5 / dl.batch_size)
 
-                epoch_iter.set_postfix(loss=total_loss.mean, top1=acc1.mean, top5=acc5.mean)
+                epoch_iter.set_postfix(
+                    loss=total_loss.mean, top1=acc1.mean, top5=acc5.mean
+                )
 
-        self.log(**{
-            f'{prefix}_loss': total_loss.mean,
-            f'{prefix}_acc1': acc1.mean,
-            f'{prefix}_acc5': acc5.mean,
-        })
+        self.log(
+            **{
+                f"{prefix}_loss": total_loss.mean,
+                f"{prefix}_acc1": acc1.mean,
+                f"{prefix}_acc5": acc5.mean,
+            }
+        )
 
         return total_loss.mean, acc1.mean, acc5.mean
 
@@ -230,14 +293,24 @@ class TrainingExperiment(Experiment):
 
     @property
     def train_metrics(self):
-        return ['epoch', 'timestamp',
-                'train_loss', 'train_acc1', 'train_acc5',
-                'val_loss', 'val_acc1', 'val_acc5',
-                ]
+        return [
+            "epoch",
+            "timestamp",
+            "train_loss",
+            "train_acc1",
+            "train_acc5",
+            "val_loss",
+            "val_acc1",
+            "val_acc5",
+        ]
 
     def __repr__(self):
-        if not isinstance(self.params['model'], str) and isinstance(self.params['model'], torch.nn.Module):
-            self.params['model'] = self.params['model'].__module__
-        
-        assert isinstance(self.params['model'], str), f"\nUnexpected model inputs: {self.params['model']}"
+        if not isinstance(self.params["model"], str) and isinstance(
+            self.params["model"], torch.nn.Module
+        ):
+            self.params["model"] = self.params["model"].__module__
+
+        assert isinstance(
+            self.params["model"], str
+        ), f"\nUnexpected model inputs: {self.params['model']}"
         return json.dumps(self.params, indent=4)

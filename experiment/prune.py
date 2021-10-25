@@ -23,9 +23,13 @@ class PruningExperiment(TrainingExperiment):
                  resume=None,
                  resume_optim=False,
                  save_freq=10,
-                 best_top1 = 0):
+                 checkpoint_metric=None,
+                 early_stop=None,
+                 lr_schedule=None,
+                 gpu=None
+                 ):
 
-        super(PruningExperiment, self).__init__(dataset, model, seed, path, dl_kwargs, train_kwargs, debug, pretrained, resume, resume_optim, save_freq, best_top1)
+        super(PruningExperiment, self).__init__(dataset, model, seed, path, dl_kwargs, train_kwargs, debug, pretrained, resume, resume_optim, save_freq, checkpoint_metric, early_stop, lr_schedule, gpu)
         self.add_params(strategy=strategy, compression=compression)
 
         self.apply_pruning(strategy, compression)
@@ -34,6 +38,7 @@ class PruningExperiment(TrainingExperiment):
         self.save_freq = save_freq
 
     def apply_pruning(self, strategy, compression):
+        printc(f"applying {strategy} to {self.model}", color='GREEN')
         constructor = getattr(strategies, strategy)
         x, y = next(iter(self.train_dl))
         self.pruning = constructor(self.model, x, y, compression=compression)
