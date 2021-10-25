@@ -19,7 +19,7 @@ class PruningExperiment(TrainingExperiment):
                  dl_kwargs=dict(),
                  train_kwargs=dict(),
                  debug=False,
-                 pretrained=True,
+                 pretrained=False,
                  resume=None,
                  resume_optim=False,
                  save_freq=10,
