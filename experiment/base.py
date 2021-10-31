@@ -105,6 +105,8 @@ class Experiment(ABC):
         if path is None:
             self.path = self.get_path()
         else:
+            if not isinstance(self.path, pathlib.Path):
+                self.path = pathlib.Path(self.path)
             self.path = self.path / self.uid
         printc(f"Logging results to {self.path}", color='MAGENTA')
         self.path.mkdir(exist_ok=True, parents=True)

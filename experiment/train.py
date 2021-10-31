@@ -49,7 +49,7 @@ class TrainingExperiment(Experiment):
         resume_optim: bool = False,
         save_freq: int = 10,
         checkpoint_metric: str = None,
-        early_stop: str = None,
+        early_stop_method: str = None,
         lr_schedule: Callable = None,
         gpu: int = None,
     ) -> None:
@@ -72,7 +72,7 @@ class TrainingExperiment(Experiment):
             will still be saved regardless of this parameter).
         :param checkpoint_metric: metric to use to figure out which is the best model seen
             during training.
-        :param early_stop: method for determining early training termination.
+        :param early_stop_method: method for determining early training termination.
         :param lr_schedule: function with signature (epoch) which returns the learning rate
             for that epoch.
         :param gpu: the number of the gpu to run on.
@@ -94,7 +94,7 @@ class TrainingExperiment(Experiment):
         self.best_metrics = None
         self.gpu = gpu
         self.device = None  # gets set when calling self.run()
-        self.early_stop = early_stop
+        self.early_stop_method = early_stop_method
 
         params = locals()
         params["dl_kwargs"] = dl_kwargs
@@ -167,7 +167,7 @@ class TrainingExperiment(Experiment):
 
     def build_model(
         self,
-        model: Union[str, torchvision.models],
+        model: Union[str, torch.nn.Module],
         pretrained: bool = True,
         resume: str = None,
     ) -> None:
@@ -283,8 +283,8 @@ class TrainingExperiment(Experiment):
                     metrics
                 ):
                     print(
-                        f"{self.checkpoint_metric} ({metrics[self.checkpoint_metric]}) "
-                        f"improved over previous best, checkpointing model."
+                        f"\n{self.checkpoint_metric} ({metrics[self.checkpoint_metric]}) "
+                        f"improved over previous best, checkpointing model.\n"
                     )
                     self.checkpoint()
                 elif epoch % self.save_freq == 0:
@@ -300,13 +300,13 @@ class TrainingExperiment(Experiment):
                 self.lr_scheduler.step()
 
                 # optionally stop early
-                if hasattr(self, "early_stop") and self.early_stop(metrics):
+                if self.early_stop_method and self.early_stop(metrics):
                     break
 
         except KeyboardInterrupt:
             printc(f"\nInterrupted at epoch {epoch}. Tearing Down", color="RED")
 
-    def run_epoch(self, train: bool, epoch: int = 0) -> tuple(int, int, int):
+    def run_epoch(self, train: bool, epoch: int = 0) -> tuple[int]:
         """Run a single epoch."""
 
         if train:
@@ -363,11 +363,11 @@ class TrainingExperiment(Experiment):
 
         return total_loss.mean, acc1.mean, acc5.mean
 
-    def train(self, epoch: int = 0) -> tuple(int, int, int):
+    def train(self, epoch: int = 0) -> tuple[int]:
         """Run a single training epoch."""
         return self.run_epoch(True, epoch)
 
-    def eval(self, epoch: int = 0) -> tuple(int, int, int):
+    def eval(self, epoch: int = 0) -> tuple[int]:
         """Run a single validation epoch."""
         return self.run_epoch(False, epoch)
 

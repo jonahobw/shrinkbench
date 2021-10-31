@@ -30,7 +30,7 @@ class PruningExperiment(TrainingExperiment):
         resume_optim: bool = False,
         save_freq: int = 10,
         checkpoint_metric: str = None,
-        early_stop: str = None,
+        early_stop_method: str = None,
         lr_schedule: Callable = None,
         gpu: int = None,
     ):
@@ -54,7 +54,7 @@ class PruningExperiment(TrainingExperiment):
             will still be saved regardless of this parameter).
         :param checkpoint_metric: metric to use to figure out which is the best model seen
             during training.
-        :param early_stop: method for determining early training termination.
+        :param early_stop_method: method for determining early training termination.
         :param lr_schedule: function with signature (epoch) which returns the learning rate
             for that epoch.
         :param gpu: the number of the gpu to run on.
@@ -73,7 +73,7 @@ class PruningExperiment(TrainingExperiment):
             resume_optim,
             save_freq,
             checkpoint_metric,
-            early_stop,
+            early_stop_method,
             lr_schedule,
             gpu,
         )
