@@ -33,6 +33,7 @@ class PruningExperiment(TrainingExperiment):
         early_stop_method: str = None,
         lr_schedule: Callable = None,
         gpu: int = None,
+        save_one_checkpoint: bool=False
     ):
         """
         Setup class variabls.
@@ -58,6 +59,8 @@ class PruningExperiment(TrainingExperiment):
         :param lr_schedule: function with signature (epoch) which returns the learning rate
             for that epoch.
         :param gpu: the number of the gpu to run on.
+        :param save_one_checkpoint: if true, removes all previous checkpoints and only keeps this one.
+            Since each checkpoint may be hundreds of MB, this saves lots of memory.
         """
 
         super().__init__(
@@ -76,6 +79,7 @@ class PruningExperiment(TrainingExperiment):
             early_stop_method,
             lr_schedule,
             gpu,
+            save_one_checkpoint,
         )
         self.add_params(strategy=strategy, compression=compression)
 

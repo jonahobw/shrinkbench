@@ -52,6 +52,7 @@ class TrainingExperiment(Experiment):
         early_stop_method: str = None,
         lr_schedule: Callable = None,
         gpu: int = None,
+        save_one_checkpoint: bool=False,
     ) -> None:
 
         """
@@ -76,6 +77,8 @@ class TrainingExperiment(Experiment):
         :param lr_schedule: function with signature (epoch) which returns the learning rate
             for that epoch.
         :param gpu: the number of the gpu to run on.
+        :param save_one_checkpoint: if true, removes all previous checkpoints and only keeps this one.
+            Since each checkpoint may be hundreds of MB, this saves lots of memory.
         """
 
         # Default children kwargs
@@ -95,6 +98,7 @@ class TrainingExperiment(Experiment):
         self.gpu = gpu
         self.device = None  # gets set when calling self.run()
         self.early_stop_method = early_stop_method
+        self.save_one_checkpoint = save_one_checkpoint
 
         params = locals()
         params["dl_kwargs"] = dl_kwargs
@@ -247,10 +251,18 @@ class TrainingExperiment(Experiment):
         cudnn.benchmark = True  # For fast training.
 
     def checkpoint(self) -> None:
-        """Save model parameters from last epoch."""
+        """
+        Save model parameters from last epoch.
+
+        If self.save_one_checkpoint is true, removes all previous checkpoints and only keeps this one.
+        since each checkpoint may be hundreds of MB, this saves lots of memory.
+        """
 
         checkpoint_path = self.path / "checkpoints"
         checkpoint_path.mkdir(exist_ok=True, parents=True)
+        if self.save_one_checkpoint:
+            for checkpoint in checkpoint_path.glob('*'):
+                checkpoint.unlink()
         epoch = self.log_epoch_n
         torch.save(
             {
