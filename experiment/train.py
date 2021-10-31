@@ -52,7 +52,7 @@ class TrainingExperiment(Experiment):
         early_stop_method: str = None,
         lr_schedule: Callable = None,
         gpu: int = None,
-        save_one_checkpoint: bool=False,
+        save_one_checkpoint: bool = False,
     ) -> None:
 
         """
@@ -77,8 +77,8 @@ class TrainingExperiment(Experiment):
         :param lr_schedule: function with signature (epoch) which returns the learning rate
             for that epoch.
         :param gpu: the number of the gpu to run on.
-        :param save_one_checkpoint: if true, removes all previous checkpoints and only keeps this one.
-            Since each checkpoint may be hundreds of MB, this saves lots of memory.
+        :param save_one_checkpoint: if true, removes all previous checkpoints and only keeps this
+            one. Since each checkpoint may be hundreds of MB, this saves lots of memory.
         """
 
         # Default children kwargs
@@ -111,7 +111,7 @@ class TrainingExperiment(Experiment):
 
         self.build_dataloader(dataset, **dl_kwargs)
 
-        self.build_model(model, pretrained, resume)
+        self.build_model(model, pretrained, resume, dataset)
 
         self.build_train(
             resume_optim=resume_optim, lr_schedule=lr_schedule, **train_kwargs
@@ -174,6 +174,7 @@ class TrainingExperiment(Experiment):
         model: Union[str, torch.nn.Module],
         pretrained: bool = True,
         resume: str = None,
+        dataset: str = None,
     ) -> None:
         """Build the model."""
 
@@ -182,8 +183,16 @@ class TrainingExperiment(Experiment):
                 model = getattr(models, model)(pretrained=pretrained)
 
             elif hasattr(torchvision.models, model):
-                # https://pytorch.org/docs/stable/torchvision/models.html
-                model = getattr(torchvision.models, model)(pretrained=pretrained)
+                # need dataset to know number of classes
+                assert dataset is not None, (
+                    "If model is not in shrinkbench, 'dataset' argument must be"
+                    " passed to self.build_model so the number of classes is known."
+                )
+                num_classes = datasets.num_classes[dataset]
+                model_args = models.model_args(model)
+                model = getattr(torchvision.models, model)(
+                    pretrained=pretrained, num_classes=num_classes, **model_args
+                )
                 mark_classifier(model)  # add is_classifier attribute
             else:
                 raise ValueError(
@@ -254,14 +263,14 @@ class TrainingExperiment(Experiment):
         """
         Save model parameters from last epoch.
 
-        If self.save_one_checkpoint is true, removes all previous checkpoints and only keeps this one.
-        since each checkpoint may be hundreds of MB, this saves lots of memory.
+        If self.save_one_checkpoint is true, removes all previous checkpoints and only keeps this
+        one. Since each checkpoint may be hundreds of MB, this saves lots of memory.
         """
 
         checkpoint_path = self.path / "checkpoints"
         checkpoint_path.mkdir(exist_ok=True, parents=True)
         if self.save_one_checkpoint:
-            for checkpoint in checkpoint_path.glob('*'):
+            for checkpoint in checkpoint_path.glob("*"):
                 checkpoint.unlink()
         epoch = self.log_epoch_n
         torch.save(

@@ -11,9 +11,7 @@ MODELS_WITH_FC = (
 )
 
 # classifier is .classifier
-MODELS_WITH_CLASSIFIER = (
-    torchvision.models.DenseNet,
-)
+MODELS_WITH_CLASSIFIER = (torchvision.models.DenseNet,)
 
 
 # classifier is .classifier[-1]
@@ -74,11 +72,14 @@ def replace_head(model, n_classes, keep_weights=True):
         model.fc = reduce_linear_layer(model.fc, n_classes, keep_weights)
 
     elif isinstance(model, MODELS_WITH_CLASSIFIER):
-        model.classifier = reduce_linear_layer(model.classifier, n_classes, keep_weights)
+        model.classifier = reduce_linear_layer(
+            model.classifier, n_classes, keep_weights
+        )
 
     elif isinstance(model, MODELS_WITH_CLASSIFIER_LIST):
-        model.classifier[-1] = reduce_linear_layer(model.classifier[-1],
-                                                   n_classes, keep_weights)
+        model.classifier[-1] = reduce_linear_layer(
+            model.classifier[-1], n_classes, keep_weights
+        )
 
     elif isinstance(model, torchvision.models.SqueezeNet):
         # TODO: Non standard, uses convs
@@ -109,14 +110,13 @@ def get_classifier_module(model):
     """
 
     if isinstance(model, MODELS_WITH_FC):
-        clf = 'fc'
+        clf = "fc"
 
     elif isinstance(model, MODELS_WITH_CLASSIFIER):
-        clf = 'classifier'
+        clf = "classifier"
 
     elif isinstance(model, MODELS_WITH_CLASSIFIER_LIST):
-        i = len(model.classifier) - 1
-        clf = f"classifier.{i}"
+        return getattr(model, "classifier")[-1]
 
     elif isinstance(model, torchvision.models.SqueezeNet):
         # TODO: Non standard, uses convs
