@@ -1,3 +1,5 @@
+"""Base class for experiments."""
+
 import os
 from abc import ABC, abstractmethod
 import datetime
@@ -18,18 +20,21 @@ from ..util import printc
 
 
 class Experiment(ABC):
+    """Base experiment class."""
 
     def __init__(self, seed=42):
-        self._params = {"experiment": self.__class__.__name__, 'params': {}}
+        self._params = {"experiment": self.__class__.__name__, "params": {}}
         self.seed = seed
         self.frozen = False
-        if not os.name == 'nt':
+        if not os.name == "nt":
             signal.signal(signal.SIGINT, self.SIGINT_handler)
             signal.signal(signal.SIGQUIT, self.SIGQUIT_handler)
 
     def add_params(_self, **kwargs):
         if not _self.frozen:
-            _self._params['params'].update({k: v for k, v in kwargs.items() if k not in ('self', '__class__')})
+            _self._params["params"].update(
+                {k: v for k, v in kwargs.items() if k not in ("self", "__class__")}
+            )
         else:
             raise RuntimeError("Cannot add params to frozen experiment")
 
@@ -41,29 +46,31 @@ class Experiment(ABC):
     @property
     def params(self):
         # prevents from trying to modify
-        return self._params['params']
+        return self._params["params"]
 
     def serializable_params(self):
         return {k: repr(v) for k, v in self._params.items()}
 
     def save_params(self):
-        path = self.path / 'params.json'
-        with open(path, 'w') as f:
+        path = self.path / "params.json"
+        with open(path, "w") as f:
             json.dump(self.serializable_params(), f, indent=4)
 
     def get_path(self):
         if hasattr(self, "rootdir"):
             parent = pathlib.Path(self.rootdir)
         else:
-            parent = pathlib.Path('results')
-        if self._params.get('debug', False):
-            parent /= 'tmp'
+            parent = pathlib.Path("results")
+        if self._params.get("debug", False):
+            parent /= "tmp"
         parent.mkdir(parents=True, exist_ok=True)
         return parent / self.uid
 
     @property
     def digest(self):
-        return hashlib.md5(json.dumps(self.serializable_params(), sort_keys=True).encode('utf-8')).hexdigest()
+        return hashlib.md5(
+            json.dumps(self.serializable_params(), sort_keys=True).encode("utf-8")
+        ).hexdigest()
 
     def __hash__(self):
         return hash(self.digest)
@@ -97,7 +104,7 @@ class Experiment(ABC):
 
         N = 4  # length of nonce
         time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        nonce = ''.join(random.choices(string.ascii_uppercase + string.digits, k=N))
+        nonce = "".join(random.choices(string.ascii_uppercase + string.digits, k=N))
         self.uid = f"{time}-{nonce}-{self.digest}"
         return self.uid
 
@@ -108,7 +115,7 @@ class Experiment(ABC):
             if not isinstance(self.path, pathlib.Path):
                 self.path = pathlib.Path(self.path)
             self.path = self.path / self.uid
-        printc(f"Logging results to {self.path}", color='MAGENTA')
+        printc(f"Logging results to {self.path}", color="MAGENTA")
         self.path.mkdir(exist_ok=True, parents=True)
         self.save_params()
 
@@ -116,11 +123,12 @@ class Experiment(ABC):
         self.log_tb = tensorboard
         self.log_epoch_n = 0
         if self.log_csv:
-            self.csvlogger = CSVLogger(self.path / 'logs.csv', metrics)
+            self.csvlogger = CSVLogger(self.path / "logs.csv", metrics)
         if self.log_tb:
-            tb_path = self.path / 'tbevents'
+            tb_path = self.path / "tbevents"
             tb_path.mkdir()
             from torch.utils.tensorboard import SummaryWriter
+
             self.tblogger = SummaryWriter(log_dir=tb_path)
 
     def log(self, **kwargs):

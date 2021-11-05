@@ -4,27 +4,20 @@
 # pylint: disable=invalid-name, too-many-arguments, too-many-locals
 # pylint: disable=no-member
 
-import pathlib
 import time
-from typing import Callable, Union
 import json
+from typing import Callable
 
 import torch
-import torchvision.models
 from torch import nn
-from torch.utils.data import DataLoader
-from torch.backends import cudnn
 from tqdm import tqdm
 
-from .base import Experiment
-from .. import datasets
-from .. import models
+from .dnn import DNNExperiment
 from ..metrics import correct
-from ..models.head import mark_classifier
 from ..util import printc, OnlineStats
 
 
-class TrainingExperiment(Experiment):
+class TrainingExperiment(DNNExperiment):
     """Training a DNN."""
 
     default_dl_kwargs = {"batch_size": 128, "pin_memory": False, "num_workers": 8}
@@ -47,7 +40,7 @@ class TrainingExperiment(Experiment):
         pretrained: bool = False,
         resume: str = None,
         resume_optim: bool = False,
-        save_freq: int = 10,
+        save_freq: int = 1000,
         checkpoint_metric: str = None,
         early_stop_method: str = None,
         lr_schedule: Callable = None,
@@ -77,8 +70,8 @@ class TrainingExperiment(Experiment):
         :param lr_schedule: function with signature (epoch) which returns the learning rate
             for that epoch.
         :param gpu: the number of the gpu to run on.
-        :param save_one_checkpoint: if true, removes all previous checkpoints and only keeps this
-            one. Since each checkpoint may be hundreds of MB, this saves lots of memory.
+        :param save_one_checkpoint: if true, removes all previous checkpoints and only keeps
+            one at a time. Since each checkpoint may be hundreds of MB, this saves lots of memory.
         """
 
         # Default children kwargs
@@ -160,53 +153,6 @@ class TrainingExperiment(Experiment):
         time.sleep(1)
         self.run_epochs()
 
-    def build_dataloader(self, dataset: str, **dl_kwargs) -> None:
-        """Build the dataloader."""
-
-        constructor = getattr(datasets, dataset)
-        self.train_dataset = constructor(train=True)
-        self.val_dataset = constructor(train=False)
-        self.train_dl = DataLoader(self.train_dataset, shuffle=True, **dl_kwargs)
-        self.val_dl = DataLoader(self.val_dataset, shuffle=False, **dl_kwargs)
-
-    def build_model(
-        self,
-        model: Union[str, torch.nn.Module],
-        pretrained: bool = True,
-        resume: str = None,
-        dataset: str = None,
-    ) -> None:
-        """Build the model."""
-
-        if isinstance(model, str):
-            if hasattr(models, model):
-                model = getattr(models, model)(pretrained=pretrained)
-
-            elif hasattr(torchvision.models, model):
-                # need dataset to know number of classes
-                assert dataset is not None, (
-                    "If model is not in shrinkbench, 'dataset' argument must be"
-                    " passed to self.build_model so the number of classes is known."
-                )
-                num_classes = datasets.num_classes[dataset]
-                model_args = models.model_args(model)
-                model = getattr(torchvision.models, model)(
-                    pretrained=pretrained, num_classes=num_classes, **model_args
-                )
-                mark_classifier(model)  # add is_classifier attribute
-            else:
-                raise ValueError(
-                    f"Model {model} not available in custom models or torchvision models"
-                )
-
-        self.model = model
-
-        if resume is not None:
-            self.resume = pathlib.Path(self.resume)
-            assert self.resume.exists(), "Resume path does not exist"
-            previous = torch.load(self.resume)
-            self.model.load_state_dict(previous["model_state_dict"])
-
     def build_train(
         self,
         optim: str,
@@ -244,22 +190,7 @@ class TrainingExperiment(Experiment):
         # set up the optimizer to adjust learning rate during training
         self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self.optim, lr_schedule)
 
-    def to_device(self) -> None:
-        """Move model to CPU/GPU."""
-
-        # Torch CUDA config
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if self.gpu is not None:
-            try:
-                self.device = torch.device(f"cuda:{self.gpu}")
-            except AssertionError as e:
-                printc(e, color="ORANGE")
-        if not torch.cuda.is_available():
-            printc("GPU NOT AVAILABLE, USING CPU!", color="ORANGE")
-        self.model.to(self.device)
-        cudnn.benchmark = True  # For fast training.
-
-    def checkpoint(self) -> None:
+    def checkpoint(self, epoch: int) -> None:
         """
         Save model parameters from last epoch.
 
@@ -272,7 +203,6 @@ class TrainingExperiment(Experiment):
         if self.save_one_checkpoint:
             for checkpoint in checkpoint_path.glob("*"):
                 checkpoint.unlink()
-        epoch = self.log_epoch_n
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
@@ -286,7 +216,7 @@ class TrainingExperiment(Experiment):
 
         since = time.time()
         try:
-            for epoch in range(self.epochs):
+            for epoch in range(1, self.epochs + 1):
                 loss, acc1, acc5 = self.train(epoch)
                 val_loss, val_acc1, val_acc5 = self.eval(epoch)
 
@@ -300,17 +230,17 @@ class TrainingExperiment(Experiment):
                 }
                 # Checkpoint epochs if it is the best model seen so far or if save frequency
                 # is triggered
-                if hasattr(self, "checkpoint_metric") and self.check_best_metric(
+                if self.checkpoint_metric is not None and self.check_best_metric(
                     metrics
                 ):
                     print(
                         f"\n{self.checkpoint_metric} ({metrics[self.checkpoint_metric]}) "
                         f"improved over previous best, checkpointing model.\n"
                     )
-                    self.checkpoint()
+                    self.checkpoint(epoch)
                 elif epoch % self.save_freq == 0:
                     print("Save frequency met, checkpointing model")
-                    self.checkpoint()
+                    self.checkpoint(epoch)
 
                 self.log(timestamp=time.time() - since)
                 self.log_epoch(epoch)
@@ -326,6 +256,9 @@ class TrainingExperiment(Experiment):
 
         except KeyboardInterrupt:
             printc(f"\nInterrupted at epoch {epoch}. Tearing Down", color="RED")
+
+        print("Training ended, checkpointing last model.")
+        self.checkpoint(epoch)
 
     def run_epoch(self, train: bool, epoch: int = 0) -> tuple[int]:
         """Run a single epoch."""
@@ -406,6 +339,10 @@ class TrainingExperiment(Experiment):
             "val_acc5",
             "lr",
         ]
+
+    def generate_uid(self):
+        self.uid = "train"
+        return self.uid
 
     def __repr__(self) -> str:
         """Dunders."""
