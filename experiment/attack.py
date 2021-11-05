@@ -18,14 +18,14 @@ from cleverhans.torch.attacks.projected_gradient_descent import (
 # from cleverhans.plot.pyplot_image import pair_visual  # might implement later
 from tqdm import tqdm
 
-from .base import Experiment
+from .dnn import DNNExperiment
 from ..metrics import correct
 from ..util import OnlineStats
 
 logger = logging.getLogger("attack")
 
 
-class AttackExperiment(Experiment):
+class AttackExperiment(DNNExperiment):
     """
     Run an attack on a model.
     """
