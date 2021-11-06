@@ -217,6 +217,8 @@ class TrainingExperiment(DNNExperiment):
         since = time.time()
         try:
             for epoch in range(1, self.epochs + 1):
+                if self.debug is not None and epoch > 1:
+                    break
                 loss, acc1, acc5 = self.train(epoch)
                 val_loss, val_acc1, val_acc5 = self.eval(epoch)
 
@@ -283,7 +285,7 @@ class TrainingExperiment(DNNExperiment):
 
         with torch.set_grad_enabled(train):
             for i, (x, y) in enumerate(epoch_iter, start=1):
-                if self.debug and i > 1:
+                if self.debug is not None and i > self.debug:
                     break
                 x, y = x.to(self.device), y.to(self.device)
                 yhat = self.model(x)
