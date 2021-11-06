@@ -45,6 +45,7 @@ class AttackExperiment(DNNExperiment):
         save_imgs: bool = False,
         gpu: int = None,
         seed: int = 42,
+        debug: int = None,
     ):
         """
         Run an attack on a model.
@@ -62,6 +63,8 @@ class AttackExperiment(DNNExperiment):
         :param save_imgs: whether or not to save adversarial inputs.
         :param gpu: gpu to run on.
         :param seed: seed for random number generator.
+        :param debug: if not None, it is an integer representing how many batches of
+            data to attack, instead of attacking the entire train/test dataset.
         """
 
         super().__init__(seed)
@@ -90,6 +93,7 @@ class AttackExperiment(DNNExperiment):
         self.runtime = None
         self.results = {}
         self.generate_uid()
+        self.debug = debug
 
     def save_variables(self):
         """Return a dictionary of variables to save."""
@@ -171,7 +175,7 @@ class AttackExperiment(DNNExperiment):
                 adv_acc5=adv_acc5.mean,
             )
 
-            if i == 3:
+            if self.debug is not None and i == self.debug:
                 break
 
         results["clean_acc1"] = clean_acc1.mean
