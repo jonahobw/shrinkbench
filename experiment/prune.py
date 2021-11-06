@@ -148,3 +148,7 @@ class PruningExperiment(TrainingExperiment):
         metrics["val_acc5"] = acc5
 
         return metrics
+
+    def generate_uid(self):
+        self.uid = "prune"
+        return self.uid
