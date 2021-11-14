@@ -146,7 +146,7 @@ class AttackExperiment(DNNExperiment):
         adv_acc5 = OnlineStats()
 
         epoch_iter = tqdm(dl)
-        epoch_iter.set_description(f"{self.attack_name} on {data} dataset: ")
+        epoch_iter.set_description(f"{self.attack_name} on {data} dataset")
 
         for i, (x, y) in enumerate(epoch_iter, start=1):
             x, y = x.to(self.device), y.to(self.device)

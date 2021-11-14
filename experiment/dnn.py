@@ -26,7 +26,7 @@ class DNNExperiment(Experiment):
         """Move model to CPU/GPU."""
 
         # Torch CUDA config
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu")
         if self.gpu is not None:
             try:
                 self.device = torch.device(f"cuda:{self.gpu}")
@@ -81,5 +81,5 @@ class DNNExperiment(Experiment):
         if resume is not None:
             self.resume = pathlib.Path(self.resume)
             assert self.resume.exists(), "Resume path does not exist"
-            previous = torch.load(self.resume)
+            previous = torch.load(self.resume, map_location=torch.device('cpu'))
             self.model.load_state_dict(previous["model_state_dict"], strict=False)

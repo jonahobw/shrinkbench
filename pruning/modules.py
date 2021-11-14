@@ -65,7 +65,7 @@ class MaskedModule(nn.Module):
         # Multiply weights by masks so metrics can count nonzeros
         weight_mask = _ensure_tensor(weight_mask)
         self.weight_mask = _same_device(weight_mask, self.weight)
-        self.weight.data.mul_(weight_mask)
+        self.weight.data.mul_(self.weight_mask)
 
         if bias_mask is not None:
             bias_mask = _ensure_tensor(bias_mask)

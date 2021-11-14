@@ -217,8 +217,6 @@ class TrainingExperiment(DNNExperiment):
         since = time.time()
         try:
             for epoch in range(1, self.epochs + 1):
-                if self.debug is not None and epoch > 1:
-                    break
                 loss, acc1, acc5 = self.train(epoch)
                 val_loss, val_acc1, val_acc5 = self.eval(epoch)
 
@@ -256,6 +254,9 @@ class TrainingExperiment(DNNExperiment):
                 if self.early_stop_method and self.early_stop(metrics):
                     break
 
+                if self.debug is not None:
+                    break
+
         except KeyboardInterrupt:
             printc(f"\nInterrupted at epoch {epoch}. Tearing Down", color="RED")
 
@@ -281,7 +282,7 @@ class TrainingExperiment(DNNExperiment):
         step_size.add(self.lr_scheduler.get_last_lr()[0])
 
         epoch_iter = tqdm(dl)
-        epoch_iter.set_description(f"{prefix.capitalize()} Epoch {epoch}/{self.epochs}")
+        epoch_iter.set_description(f"{prefix.capitalize()} Epoch {epoch}/{self.epochs if train else '1'}")
 
         with torch.set_grad_enabled(train):
             for i, (x, y) in enumerate(epoch_iter, start=1):

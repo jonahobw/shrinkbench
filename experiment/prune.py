@@ -96,6 +96,7 @@ class PruningExperiment(TrainingExperiment):
 
     def apply_pruning(self, strategy: str, compression: int, attack_kwargs: {} = None) -> None:
         """Apply the pruning to the model."""
+        printc("Pruning model ...", color="GREEN")
         self.to_device()
         constructor = getattr(strategies, strategy)
         if issubclass(constructor, AdversarialPruning):
@@ -108,7 +109,7 @@ class PruningExperiment(TrainingExperiment):
             x, y = next(iter(self.train_dl))
             self.pruning = constructor(self.model, x, y, compression=compression)
         self.pruning.apply()
-        printc("Masked model", color="GREEN")
+        printc("Pruning Completed", color="GREEN")
 
     def run(self) -> None:
         """Run the finetuning and metrics on the model."""
