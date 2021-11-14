@@ -203,6 +203,7 @@ class TrainingExperiment(DNNExperiment):
         if self.save_one_checkpoint:
             for checkpoint in checkpoint_path.glob("*"):
                 checkpoint.unlink()
+        self.model.to('cpu')
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
