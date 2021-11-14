@@ -82,4 +82,4 @@ class DNNExperiment(Experiment):
             self.resume = pathlib.Path(self.resume)
             assert self.resume.exists(), "Resume path does not exist"
             previous = torch.load(self.resume)
-            self.model.load_state_dict(previous["model_state_dict"])
+            self.model.load_state_dict(previous["model_state_dict"], strict=False)

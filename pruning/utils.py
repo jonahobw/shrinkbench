@@ -138,6 +138,57 @@ def get_param_gradients(model, inputs, outputs, loss_func=None, by_module=True):
     return gradients
 
 
+def get_adv_param_gradients(model, dl, attack, device=None, loss_func=None, by_module=True):
+    #todo see if I can make this function a wrapper of get_param_gradients and add options to get_param_gradients
+    # run over the whole dataset
+
+    """
+
+    :param model:
+    :param dl: the train/test dataloader
+    :param attack: a function which generates adversarial inputs, signature (inputs, labels)
+    :return: the cumulative gradients over the adversarial inputs
+    """
+
+    gradients = OrderedDict()
+
+    if loss_func is None:
+        loss_func = nn.CrossEntropyLoss()
+
+    # todo right now only does one batch, implement over entire dataset
+
+    x, y = next(iter(dl))
+    if device:
+        x, y = x.to(device), y.to(device)
+
+    training = model.training
+    model.train()
+    pred = model(attack(x))         # This is the critical line
+    loss = loss_func(pred, y)
+    loss.backward()                 # does this happen after computing over multiple batches?  I think
+                                    # it will be okay if I call this after each batch
+
+    if by_module:
+        gradients = defaultdict(OrderedDict)
+        for module in model.modules():
+            assert module not in gradients
+            for name, param in module.named_parameters(recurse=False):
+                if param.requires_grad and param.grad is not None:
+                    gradients[module][name] = param.grad.detach().cpu().numpy().copy()
+
+    else:
+        gradients = OrderedDict()
+        for name, param in model.named_parameters():
+            assert name not in gradients
+            if param.requires_grad and param.grad is not None:
+                gradients[name] = param.grad.detach().cpu().numpy().copy()
+
+    model.zero_grad()
+    model.train(training)
+
+    return gradients
+
+
 def fraction_to_keep(compression, model, prunable_modules):
     """ Return fraction of params to keep to achieve desired compression ratio
 

@@ -29,7 +29,7 @@ def fraction_threshold(tensor, fraction):
     return threshold
 
 
-def threshold_mask(tensor, threshold):
+def threshold_mask(tensor, threshold, largest=False):
     """Given a fraction or threshold, compute binary mask
 
     Arguments:
@@ -37,12 +37,17 @@ def threshold_mask(tensor, threshold):
 
     Keyword Arguments:
         threshold {float} -- Absolute threshold for dropping params
+        largest {bool} -- If false, masks the smallest absolute values.  If
+                        true, masks the largest actual value.  (used for
+                        adversarial pruning)
 
     Returns:
         np.ndarray -- Binary mask
     """
     assert isinstance(tensor, np.ndarray)
     idx = np.logical_and(tensor < threshold, tensor > -threshold)
+    if largest:
+        idx = np.logical_and(tensor > threshold, np.ones_like(tensor) > 0)
     mask = np.ones_like(tensor)
     mask[idx] = 0
     return mask
@@ -69,8 +74,15 @@ def map_importances(fn, importances):
             for module, params in importances.items()}
 
 
-def importance_masks(importances, threshold):
-    return map_importances(lambda imp: threshold_mask(imp, threshold), importances)
+def importance_masks(importances, threshold, largest=False):
+    """
+
+    :param importances:
+    :param threshold:
+    :param largest: bool to indicate whether or not to remove the largest weights or smallest.
+    :return:
+    """
+    return map_importances(lambda imp: threshold_mask(imp, threshold, largest=largest), importances)
     # return {module:
     #         {param: threshold_mask(importance, threshold)
     #             for param, importance in params.items()}

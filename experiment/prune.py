@@ -2,11 +2,12 @@
 
 # pylint: disable=relative-beyond-top-level, too-many-arguments, invalid-name
 # pylint: disable=unspecified-encoding, too-many-locals
-
+import copy
 import json
 from typing import Callable
 from .train import TrainingExperiment
 from .. import strategies
+from ..pruning import AdversarialPruning
 from ..metrics import model_size, flops
 from ..util import printc
 
@@ -33,7 +34,8 @@ class PruningExperiment(TrainingExperiment):
         early_stop_method: str = None,
         lr_schedule: Callable = None,
         gpu: int = None,
-        save_one_checkpoint: bool=False
+        save_one_checkpoint: bool=False,
+        attack_kwargs: {} = None,
     ):
         """
         Setup class variabls.
@@ -61,6 +63,8 @@ class PruningExperiment(TrainingExperiment):
         :param gpu: the number of the gpu to run on.
         :param save_one_checkpoint: if true, removes all previous checkpoints and only keeps this one.
             Since each checkpoint may be hundreds of MB, this saves lots of memory.
+        :param attack_kwargs: specified when doing adversarial pruning; the parameters for the attack to
+            generate adversarial inputs.  Note the attack is from the CleverHans library
         """
 
         super().__init__(
@@ -81,20 +85,28 @@ class PruningExperiment(TrainingExperiment):
             gpu,
             save_one_checkpoint,
         )
-        self.add_params(strategy=strategy, compression=compression)
+        self.add_params(strategy=strategy, compression=compression, attack_kwargs=attack_kwargs)
 
-        self.apply_pruning(strategy, compression)
+        self.apply_pruning(strategy, compression, attack_kwargs)
 
         self.path = path
         self.save_freq = save_freq
         self.debug = debug
         self.metrics = None
 
-    def apply_pruning(self, strategy: str, compression: int) -> None:
+    def apply_pruning(self, strategy: str, compression: int, attack_kwargs: {} = None) -> None:
         """Apply the pruning to the model."""
+        self.to_device()
         constructor = getattr(strategies, strategy)
-        x, y = next(iter(self.train_dl))
-        self.pruning = constructor(self.model, x, y, compression=compression)
+        if issubclass(constructor, AdversarialPruning):
+            assert attack_kwargs is not None, f"Attack kwargs must be provided for {strategy} pruning."
+            copy_attack_kwargs = copy.deepcopy(attack_kwargs)
+            train = copy_attack_kwargs.pop('train')
+            dl = self.train_dl if train else self.val_dl
+            self.pruning = constructor(model=self.model, dataloader=dl, attack_kwargs=copy_attack_kwargs, compression=compression, device=self.device)
+        else:
+            x, y = next(iter(self.train_dl))
+            self.pruning = constructor(self.model, x, y, compression=compression)
         self.pruning.apply()
         printc("Masked model", color="GREEN")
 
@@ -119,7 +131,6 @@ class PruningExperiment(TrainingExperiment):
         summary = self.pruning.summary()
         summary_path = self.path / "masks_summary.csv"
         summary.to_csv(summary_path)
-        print(summary)
 
     def pruning_metrics(self) -> {}:
         """Collect the pruning metrics."""

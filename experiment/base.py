@@ -26,7 +26,7 @@ class Experiment(ABC):
         self._params = {"experiment": self.__class__.__name__, "params": {}}
         self.seed = seed
         self.frozen = False
-        if not os.name == "nt":
+        if os.name != "nt":
             signal.signal(signal.SIGINT, self.SIGINT_handler)
             signal.signal(signal.SIGQUIT, self.SIGQUIT_handler)
 
