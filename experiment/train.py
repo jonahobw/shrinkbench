@@ -32,7 +32,7 @@ class TrainingExperiment(DNNExperiment):
         self,
         dataset: str,
         model: str,
-        seed: int = 42,
+        seed: int = None,
         path: str = None,
         dl_kwargs: {} = None,
         train_kwargs: {} = None,
@@ -282,7 +282,7 @@ class TrainingExperiment(DNNExperiment):
         step_size.add(self.lr_scheduler.get_last_lr()[0])
 
         epoch_iter = tqdm(dl)
-        epoch_iter.set_description(f"{prefix.capitalize()} Epoch {epoch}/{self.epochs if train else '1'}")
+        epoch_iter.set_description(f"{prefix.capitalize()} Epoch {epoch if train else '1'}/{self.epochs if train else '1'}")
 
         with torch.set_grad_enabled(train):
             for i, (x, y) in enumerate(epoch_iter, start=1):

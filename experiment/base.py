@@ -22,9 +22,11 @@ from ..util import printc
 class Experiment(ABC):
     """Base experiment class."""
 
-    def __init__(self, seed=42):
+    def __init__(self, seed=None):
         self._params = {"experiment": self.__class__.__name__, "params": {}}
         self.seed = seed
+        if self.seed:
+            self.fix_seed(seed, deterministic=True)
         self.frozen = False
         if os.name != "nt":
             signal.signal(signal.SIGINT, self.SIGINT_handler)

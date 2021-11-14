@@ -17,7 +17,7 @@ from ..util import printc
 
 class DNNExperiment(Experiment):
 
-    def __init__(self, seed: int=42):
+    def __init__(self, seed: int=None):
         super().__init__(seed=seed)
         self.gpu = None
 

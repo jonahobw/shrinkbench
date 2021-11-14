@@ -21,7 +21,7 @@ class PruningExperiment(TrainingExperiment):
         model: str,
         strategy: str,
         compression: int,
-        seed: int = 42,
+        seed: int = None,
         path: str = None,
         dl_kwargs: {} = None,
         train_kwargs: {} = None,

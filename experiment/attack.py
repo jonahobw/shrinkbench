@@ -44,7 +44,7 @@ class AttackExperiment(DNNExperiment):
         path: str,
         save_imgs: bool = False,
         gpu: int = None,
-        seed: int = 42,
+        seed: int = None,
         debug: int = None,
     ):
         """
