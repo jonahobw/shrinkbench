@@ -89,7 +89,7 @@ class Experiment(ABC):
         # PyTorch
         torch.manual_seed(seed)
 
-        if deterministic and self.gpu:
+        if deterministic and torch.cuda.is_available():
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
 
