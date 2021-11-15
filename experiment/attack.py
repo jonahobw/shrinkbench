@@ -72,14 +72,6 @@ class AttackExperiment(DNNExperiment):
         self.resume = Path(model_path)
         self.model_path = self.resume
 
-        # generates self.model (torch.nn.module) class variable
-        self.build_model(
-            model_type, pretrained=False, resume=self.resume, dataset=dataset
-        )
-
-        # generates self.train_dataset, self.val_dataset, self.train_dl, self.val_dl
-        self.build_dataloader(dataset, **dl_kwargs)
-
         self.model_type = model_type
         self.dataset = dataset
         self.train = train
@@ -94,6 +86,14 @@ class AttackExperiment(DNNExperiment):
         self.results = {}
         self.generate_uid()
         self.debug = debug
+
+        # generates self.model (torch.nn.module) class variable
+        self.build_model(
+            model_type, pretrained=False, resume=self.resume, dataset=dataset
+        )
+
+        # generates self.train_dataset, self.val_dataset, self.train_dl, self.val_dl
+        self.build_dataloader(dataset, **dl_kwargs)
 
     def save_variables(self):
         """Return a dictionary of variables to save."""

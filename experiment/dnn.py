@@ -34,7 +34,6 @@ class DNNExperiment(Experiment):
         if not torch.cuda.is_available():
             printc("GPU NOT AVAILABLE, USING CPU!", color="ORANGE")
         self.model.to(self.device)
-        cudnn.benchmark = True  # For fast training.
 
     def build_dataloader(self, dataset: str, **dl_kwargs) -> None:
         """Build the dataloader."""

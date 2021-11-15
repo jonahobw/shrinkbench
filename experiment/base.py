@@ -25,6 +25,8 @@ class Experiment(ABC):
     def __init__(self, seed=None):
         self._params = {"experiment": self.__class__.__name__, "params": {}}
         self.seed = seed
+        if torch.cuda.is_available():
+            cudnn.benchmark = True  # For fast training.
         if self.seed:
             self.fix_seed(seed, deterministic=True)
         self.frozen = False
@@ -42,7 +44,7 @@ class Experiment(ABC):
 
     def freeze(self):
         self.generate_uid()
-        self.fix_seed(self.seed)
+        # self.fix_seed(self.seed)
         self.frozen = True
 
     @property
