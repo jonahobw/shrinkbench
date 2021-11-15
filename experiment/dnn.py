@@ -21,7 +21,6 @@ class DNNExperiment(Experiment):
         super().__init__(seed=seed)
         self.gpu = None
 
-
     def to_device(self) -> None:
         """Move model to CPU/GPU."""
 
@@ -83,3 +82,5 @@ class DNNExperiment(Experiment):
             assert self.resume.exists(), "Resume path does not exist"
             previous = torch.load(self.resume, map_location=torch.device('cpu'))
             self.model.load_state_dict(previous["model_state_dict"], strict=False)
+
+        self.to_device()

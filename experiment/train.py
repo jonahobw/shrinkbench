@@ -89,7 +89,7 @@ class TrainingExperiment(DNNExperiment):
         # value of the best model metric
         self.best_metrics = None
         self.gpu = gpu
-        self.device = None  # gets set when calling self.run()
+        self.device = None # gets set when calling self.build_model()
         self.early_stop_method = early_stop_method
         self.save_one_checkpoint = save_one_checkpoint
 
@@ -148,7 +148,6 @@ class TrainingExperiment(DNNExperiment):
 
         self.freeze()
         printc(f"Running {repr(self)}", color="YELLOW")
-        self.to_device()
         self.build_logging(self.train_metrics, self.path)
         time.sleep(1)
         self.run_epochs()

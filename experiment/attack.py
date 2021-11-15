@@ -126,7 +126,6 @@ class AttackExperiment(DNNExperiment):
         https://github.com/cleverhans-lab/cleverhans/blob/master/tutorials/torch/cifar10_tutorial.py
         """
         since = time.time()
-        self.to_device()
         self.model.eval()
 
         time.sleep(0.1)
