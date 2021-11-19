@@ -5,6 +5,7 @@ from collections import OrderedDict, defaultdict
 
 import torch
 from torch import nn
+from tqdm import tqdm
 
 
 def hook_applyfn(hook, model, forward=False, backward=False):
@@ -138,15 +139,13 @@ def get_param_gradients(model, inputs, outputs, loss_func=None, by_module=True):
     return gradients
 
 
-def get_adv_param_gradients(model, dl, attack, device=None, loss_func=None, by_module=True):
-    #todo see if I can make this function a wrapper of get_param_gradients and add options to get_param_gradients
-    # run over the whole dataset
-
+def get_adv_param_gradients(model, dl, attack, device=None, loss_func=None, by_module=True, batches=None):
     """
 
     :param model:
     :param dl: the train/test dataloader
-    :param attack: a function which generates adversarial inputs, signature (inputs, labels)
+    :param attack: a function which generates adversarial inputs with signature (inputs, labels)
+    :param batches: if not None, an integer representing the number of batches of inputs to run.
     :return: the cumulative gradients over the adversarial inputs
     """
 
@@ -155,18 +154,22 @@ def get_adv_param_gradients(model, dl, attack, device=None, loss_func=None, by_m
     if loss_func is None:
         loss_func = nn.CrossEntropyLoss()
 
-    # todo right now only does one batch, implement over entire dataset
-
-    x, y = next(iter(dl))
-    if device:
-        x, y = x.to(device), y.to(device)
-
-    training = model.training
     model.train()
-    pred = model(attack(x))         # This is the critical line
-    loss = loss_func(pred, y)
-    loss.backward()                 # does this happen after computing over multiple batches?  I think
-                                    # it will be okay if I call this after each batch
+    if device:
+        model.to(device)
+
+    batches = tqdm(dl)
+    batches.set_description("Calculating adversarial gradients")
+
+    with torch.set_grad_enabled(True):
+        for i, (x, y) in enumerate(dl):
+            if batches and i == batches:
+                break
+            if device:
+                x, y = x.to(device), y.to(device)
+            pred = model(attack(x))
+            loss = loss_func(pred, y)
+            loss.backward()
 
     if by_module:
         gradients = defaultdict(OrderedDict)
@@ -184,7 +187,7 @@ def get_adv_param_gradients(model, dl, attack, device=None, loss_func=None, by_m
                 gradients[name] = param.grad.detach().cpu().numpy().copy()
 
     model.zero_grad()
-    model.train(training)
+    model.eval()
 
     return gradients
 

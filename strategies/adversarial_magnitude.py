@@ -38,8 +38,16 @@ class GreedyPGDGlobalMagGrad(GreedyPGD):
         """Similar to GlobalMagGrad model_masks()"""
         params = self.params()
         grads = self.param_gradients(self.dl, self.attack, self.device)
+
+        # prune the highest gradient*parameter
+        # importances = {mod:
+        #                    {p: params[mod][p] * grads[mod][p]
+        #                     for p in mod_params}
+        #                for mod, mod_params in params.items()}
+
+        # prune only the highest gradients wrt the loss
         importances = {mod:
-                           {p: params[mod][p] * grads[mod][p]
+                           {p: grads[mod][p]
                             for p in mod_params}
                        for mod, mod_params in params.items()}
         flat_importances = flatten_importances(importances)
