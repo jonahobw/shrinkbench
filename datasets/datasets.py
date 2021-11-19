@@ -54,7 +54,7 @@ def dataset_path(dataset, path=None):
     for p in paths:
         p = (p / dataset).resolve()
         if p.exists():
-            print(f"Found {dataset} under {p}")
+            # print(f"Found {dataset} under {p}")
             return p
     else:
         raise LookupError(f"Could not find {dataset} in {paths}")
@@ -101,11 +101,11 @@ def MNIST(train=True, path=None):
     return dataset
 
 
-def CIFAR10(train=True, path=None):
+def CIFAR10(train=True, path=None, deterministic=False):
     """Thin wrapper around torchvision.datasets.CIFAR10"""
     mean, std = [0.491, 0.482, 0.447], [0.247, 0.243, 0.262]
     normalize = transforms.Normalize(mean=mean, std=std)
-    if train:
+    if train and not deterministic:
         preproc = [transforms.RandomHorizontalFlip(), transforms.RandomCrop(32, 4)]
     else:
         preproc = []

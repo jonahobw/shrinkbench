@@ -13,7 +13,7 @@ from torch import nn
 from tqdm import tqdm
 
 from .dnn import DNNExperiment
-from ..metrics import correct
+from ..metrics import correct,accuracy
 from ..util import printc, OnlineStats
 
 
@@ -244,11 +244,6 @@ class TrainingExperiment(DNNExperiment):
                 self.log(timestamp=time.time() - since)
                 self.log_epoch(epoch)
 
-                # update the learning rate (must be done once per epoch, or once per
-                #   training + testing iteration, that is why this is done in this
-                #   function rather than self.run_epoch())
-                self.lr_scheduler.step()
-
                 # optionally stop early
                 if self.early_stop_method and self.early_stop(metrics):
                     break
@@ -259,6 +254,7 @@ class TrainingExperiment(DNNExperiment):
         except KeyboardInterrupt:
             printc(f"\nInterrupted at epoch {epoch}. Tearing Down", color="RED")
 
+        self.model.eval()
         print("Training ended, checkpointing last model.")
         self.checkpoint(epoch)
 
@@ -270,9 +266,9 @@ class TrainingExperiment(DNNExperiment):
             prefix = "train"
             dl = self.train_dl
         else:
+            self.model.eval()
             prefix = "val"
             dl = self.val_dl
-            self.model.eval()
 
         total_loss = OnlineStats()
         acc1 = OnlineStats()
@@ -295,11 +291,11 @@ class TrainingExperiment(DNNExperiment):
 
                     self.optim.step()
                     self.optim.zero_grad()
-
+                    self.lr_scheduler.step()
                 c1, c5 = correct(yhat, y, (1, 5))
-                total_loss.add(loss.item() / dl.batch_size)
-                acc1.add(c1 / dl.batch_size)
-                acc5.add(c5 / dl.batch_size)
+                total_loss.add(loss.item() / len(x))
+                acc1.add(c1 / len(x))
+                acc5.add(c5 / len(x))
 
                 epoch_iter.set_postfix(
                     loss=total_loss.mean,
@@ -308,16 +304,24 @@ class TrainingExperiment(DNNExperiment):
                     step_size=step_size.mean,
                 )
 
+        loss = total_loss.mean
+        top1 = acc1.mean
+        top5 = acc5.mean
+
+        if train:
+            # get actual train accuracy/loss after weights update
+            top1, top5, loss = accuracy(model=self.model, dataloader=self.train_acc_dl, loss_func=self.loss_func, topk=(1, 5))
+
         self.log(
             **{
-                f"{prefix}_loss": total_loss.mean,
-                f"{prefix}_acc1": acc1.mean,
-                f"{prefix}_acc5": acc5.mean,
+                f"{prefix}_loss": loss,
+                f"{prefix}_acc1": top1,
+                f"{prefix}_acc5": top5,
                 "lr": self.lr_scheduler.get_last_lr()[0],
             }
         )
 
-        return total_loss.mean, acc1.mean, acc5.mean
+        return loss, top1, top5
 
     def train(self, epoch: int = 0) -> tuple[int]:
         """Run a single training epoch."""

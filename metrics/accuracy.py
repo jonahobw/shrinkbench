@@ -1,5 +1,8 @@
 import numpy as np
 import torch
+from torch.backends import cudnn
+from tqdm import tqdm
+import random
 
 
 def correct(output, target, topk=(1,)):
@@ -38,8 +41,8 @@ def correct(output, target, topk=(1,)):
         return res
 
 
-def accuracy(model, dataloader, topk=(1,)):
-    """Compute accuracy of a model over a dataloader for various topk
+def accuracy(model, dataloader, topk=(1,), seed=None, loss_func=None):
+    """Compute accuracy/loss of a model over a dataloader for various topk
 
     Arguments:
         model {torch.nn.Module} -- Network to evaluate
@@ -47,25 +50,69 @@ def accuracy(model, dataloader, topk=(1,)):
 
     Keyword Arguments:
         topk {iterable} -- [Iterable of values of k to consider as correct] (default: {(1,)})
+        loss_func {torch.nn._Loss} -- function to compute the loss
+        seed {int} -- if provided, sets the random seeds of python, pytorch, and numpy
 
     Returns:
         List(float) -- List of accuracies for each topk
     """
 
+    if seed is not None:
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
+        random.seed(seed)
+
+        # Numpy
+        np.random.seed(seed)
+
+        # PyTorch
+        torch.manual_seed(seed)
+
     # Use same device as model
     device = next(model.parameters()).device
 
+    model.eval()
+
     accs = np.zeros(len(topk))
+    total_tested = 0
+    loss = 0
+
+    running_accs = {}
+    for x in topk:
+        running_accs[f"top{x}"] = 0
+
+    epoch_iter = tqdm(dataloader)
+    epoch_iter.set_description("Model Accuracy")
+
     with torch.no_grad():
 
-        for i, (input, target) in enumerate(dataloader):
+        for i, (input, target) in enumerate(epoch_iter):
             input = input.to(device)
             target = target.to(device)
             output = model(input)
 
             accs += np.array(correct(output, target, topk))
+            if loss_func:
+                loss += loss_func(output, target).item()
+            total_tested += len(input)
+            for i, x in enumerate(topk):
+                running_accs[f"top{x}"] = accs[i]/total_tested
+            epoch_iter.set_postfix(
+                **running_accs
+            )
+
+    # print(f"Total inputs tested: {total_tested}")
+    # print(f"Total correct: {accs}")
 
     # Normalize over data length
-    accs /= len(dataloader.dataset)
+    loss /= total_tested
+    accs /= total_tested
+
+    if loss_func:
+        accs = np.append(accs, loss)
 
     return accs

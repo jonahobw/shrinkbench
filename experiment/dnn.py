@@ -41,8 +41,10 @@ class DNNExperiment(Experiment):
         constructor = getattr(datasets, dataset)
         self.train_dataset = constructor(train=True)
         self.val_dataset = constructor(train=False)
+        self.train_acc_dataset = constructor(train=True, deterministic=True)
         self.train_dl = DataLoader(self.train_dataset, shuffle=True, **dl_kwargs)
         self.val_dl = DataLoader(self.val_dataset, shuffle=False, **dl_kwargs)
+        self.train_acc_dl = DataLoader(self.train_acc_dataset, shuffle=False, **dl_kwargs)
 
     def build_model(
         self,
@@ -51,7 +53,10 @@ class DNNExperiment(Experiment):
         resume: str = None,
         dataset: str = None,
     ) -> None:
-        """Build the model."""
+        """
+        Build the model.  Note that this function calls self.to_device(), which
+        sets self.device and transfers the model to self.device.
+        """
 
         if isinstance(model, str):
             if hasattr(models, model):
@@ -79,7 +84,11 @@ class DNNExperiment(Experiment):
         if resume is not None:
             self.resume = pathlib.Path(self.resume)
             assert self.resume.exists(), "Resume path does not exist"
-            previous = torch.load(self.resume, map_location=torch.device('cpu'))
+            if not torch.cuda.is_available():
+                previous = torch.load(self.resume, map_location=torch.device('cpu'))
+            else:
+                previous = torch.load(self.resume)
             self.model.load_state_dict(previous["model_state_dict"], strict=False)
 
+        self.model.eval()
         self.to_device()
