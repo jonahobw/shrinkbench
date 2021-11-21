@@ -47,7 +47,7 @@ def flops(model, input):
         LinearMasked: _linear_flops,
     }
 
-    total_flops = nonzero_flops = 0
+    total_flops = nonzero_flops = 0.0
     activations = get_activations(model, input)
 
     # The ones we need for backprop
@@ -55,9 +55,9 @@ def flops(model, input):
         if m.__class__ in FLOP_fn:
             w = m.weight.detach().cpu().numpy().copy()
             module_flops = FLOP_fn[m.__class__](m, act)
-            total_flops += module_flops
+            total_flops +=  float(module_flops)
             # For our operations, all weights are symmetric so we can just
             # do simple rule of three for the estimation
-            nonzero_flops += module_flops * nonzero(w).sum() / np.prod(w.shape)
+            nonzero_flops += float(module_flops) * float(nonzero(w).sum()) / float(np.prod(w.shape))
 
     return total_flops, nonzero_flops

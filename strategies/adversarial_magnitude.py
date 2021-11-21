@@ -22,10 +22,10 @@ class GreedyPGD(AdversarialGradientMixin, AdversarialPruning):
 
     default_pgd_args = {"eps": 2 / 255, "eps_iter": 0.001, "nb_iter": 10, "norm": np.inf}
 
-    def __init__(self, model, dataloader, attack_kwargs, compression=1, device=None):
+    def __init__(self, model, dataloader, attack_kwargs, compression=1, device=None, debug=None):
         attack_params = copy.deepcopy(self.default_pgd_args)
         attack_params.update(attack_kwargs)
-        super().__init__(model=model, attack_name='pgd', dataloader=dataloader, attack_kwargs=attack_params, compression=compression, device=device)
+        super().__init__(model=model, attack_name='pgd', dataloader=dataloader, attack_kwargs=attack_params, compression=compression, device=device, debug=debug)
 
     def model_masks(self, prunable=None):
         raise NotImplementedError("Class GreedyPGD is not a pruning method, it is inherited by other pruning "
@@ -37,7 +37,7 @@ class GreedyPGDGlobalMagGrad(GreedyPGD):
     def model_masks(self):
         """Similar to GlobalMagGrad model_masks()"""
         params = self.params()
-        grads = self.param_gradients(self.dl, self.attack, self.device)
+        grads = self.param_gradients(dataloader=self.dl, attack=self.attack, device=self.device, batches=self.debug)
 
         # prune the highest gradient*parameter
         # importances = {mod:

@@ -158,12 +158,12 @@ def get_adv_param_gradients(model, dl, attack, device=None, loss_func=None, by_m
     if device:
         model.to(device)
 
-    batches = tqdm(dl)
-    batches.set_description("Calculating adversarial gradients")
+    batch_progress = tqdm(dl)
+    batch_progress.set_description("Calculating adversarial gradients")
 
     with torch.set_grad_enabled(True):
-        for i, (x, y) in enumerate(dl):
-            if batches and i == batches:
+        for i, (x, y) in enumerate(batch_progress):
+            if isinstance(batches, int) and i == batches:
                 break
             if device:
                 x, y = x.to(device), y.to(device)

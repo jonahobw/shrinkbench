@@ -41,7 +41,7 @@ def correct(output, target, topk=(1,)):
         return res
 
 
-def accuracy(model, dataloader, topk=(1,), seed=None, loss_func=None):
+def accuracy(model, dataloader, topk=(1,), seed=None, loss_func=None, debug=None):
     """Compute accuracy/loss of a model over a dataloader for various topk
 
     Arguments:
@@ -91,6 +91,8 @@ def accuracy(model, dataloader, topk=(1,), seed=None, loss_func=None):
     with torch.no_grad():
 
         for i, (input, target) in enumerate(epoch_iter):
+            if debug is not None and i > debug:
+                break
             input = input.to(device)
             target = target.to(device)
             output = model(input)

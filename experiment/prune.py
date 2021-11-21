@@ -89,9 +89,7 @@ class PruningExperiment(TrainingExperiment):
 
         self.apply_pruning(strategy, compression, attack_kwargs)
 
-        self.path = path
         self.save_freq = save_freq
-        self.debug = debug
         self.metrics = None
 
     def apply_pruning(self, strategy: str, compression: int, attack_kwargs: {} = None) -> None:
@@ -104,7 +102,7 @@ class PruningExperiment(TrainingExperiment):
             copy_attack_kwargs = copy.deepcopy(attack_kwargs)
             train = copy_attack_kwargs.pop('train')
             dl = self.train_dl if train else self.val_dl
-            self.pruning = constructor(model=self.model, dataloader=dl, attack_kwargs=copy_attack_kwargs, compression=compression, device=self.device)
+            self.pruning = constructor(model=self.model, dataloader=dl, attack_kwargs=copy_attack_kwargs, compression=compression, device=self.device, debug=self.debug)
         else:
             x, y = next(iter(self.train_dl))
             self.pruning = constructor(self.model, x, y, compression=compression)

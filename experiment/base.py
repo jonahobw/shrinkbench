@@ -57,7 +57,8 @@ class Experiment(ABC):
         return {k: repr(v) for k, v in self._params.items()}
 
     def save_params(self):
-        path = self.path / "params.json"
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = self.path / f"params_{timestamp}.json"
         with open(path, "w") as f:
             json.dump(self.serializable_params(), f, indent=4)
 

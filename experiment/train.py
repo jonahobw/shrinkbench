@@ -310,7 +310,7 @@ class TrainingExperiment(DNNExperiment):
 
         if train:
             # get actual train accuracy/loss after weights update
-            top1, top5, loss = accuracy(model=self.model, dataloader=self.train_acc_dl, loss_func=self.loss_func, topk=(1, 5))
+            top1, top5, loss = accuracy(model=self.model, dataloader=self.train_acc_dl, loss_func=self.loss_func, topk=(1, 5), debug=self.debug)
 
         self.log(
             **{

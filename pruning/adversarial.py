@@ -10,8 +10,9 @@ class AdversarialPruning(VisionPruning):
 
     attack_constructors = {"pgd": projected_gradient_descent}
 
-    def __init__(self, model, attack_name, dataloader, attack_kwargs, compression=1, device=None):
+    def __init__(self, model, attack_name, dataloader, attack_kwargs, compression=1, device=None, debug=None):
         self.device = device
+        self.debug=debug
         x, y = next(iter(dataloader))
         if device:
             x, y = x.to(self.device), y.to(self.device)
