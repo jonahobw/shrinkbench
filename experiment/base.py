@@ -54,7 +54,7 @@ class Experiment(ABC):
         return self._params["params"]
 
     def serializable_params(self):
-        return {k: repr(v) for k, v in self._params.items()}
+        return self._params
 
     def save_params(self):
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
