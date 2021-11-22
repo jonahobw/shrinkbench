@@ -72,7 +72,7 @@ class MaskedModule(nn.Module):
             assert self.bias is not None, "Provided layer must have bias for it to be masked"
             assert _same_shape(bias_mask, self.bias), f"Bias Mask must match dimensions"
             self.bias_mask = _same_device(bias_mask, self.bias)
-            self.bias.data.mul_(bias_mask)
+            self.bias.data.mul_(self.bias_mask)
 
 
 class LinearMasked(MaskedModule):
