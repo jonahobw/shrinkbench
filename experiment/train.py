@@ -286,12 +286,12 @@ class TrainingExperiment(DNNExperiment):
                 x, y = x.to(self.device), y.to(self.device)
                 yhat = self.model(x)
                 loss = self.loss_func(yhat, y)
+
                 if train:
                     loss.backward()
-
                     self.optim.step()
                     self.optim.zero_grad()
-                    self.lr_scheduler.step()
+
                 c1, c5 = correct(yhat, y, (1, 5))
                 total_loss.add(loss.item() / len(x))
                 acc1.add(c1 / len(x))
@@ -309,6 +309,7 @@ class TrainingExperiment(DNNExperiment):
         top5 = acc5.mean
 
         if train:
+            self.lr_scheduler.step()
             # get actual train accuracy/loss after weights update
             top1, top5, loss = accuracy(model=self.model, dataloader=self.train_acc_dl, loss_func=self.loss_func, topk=(1, 5), debug=self.debug)
 

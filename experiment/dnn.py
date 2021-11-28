@@ -52,6 +52,7 @@ class DNNExperiment(Experiment):
         pretrained: bool = True,
         resume: str = None,
         dataset: str = None,
+        set = True,
     ) -> None:
         """
         Build the model.  Note that this function calls self.to_device(), which
@@ -79,16 +80,20 @@ class DNNExperiment(Experiment):
                     f"Model {model} not available in custom models or torchvision models"
                 )
 
-        self.model = model
-
         if resume is not None:
-            self.resume = pathlib.Path(self.resume)
-            assert self.resume.exists(), "Resume path does not exist"
+            resume = pathlib.Path(resume)
+            assert resume.exists(), "Resume path does not exist"
             if not torch.cuda.is_available():
-                previous = torch.load(self.resume, map_location=torch.device('cpu'))
+                previous = torch.load(resume, map_location=torch.device('cpu'))
             else:
-                previous = torch.load(self.resume)
-            self.model.load_state_dict(previous["model_state_dict"], strict=False)
+                previous = torch.load(resume)
+            model.load_state_dict(previous["model_state_dict"], strict=False)
 
-        self.model.eval()
-        self.to_device()
+        model.eval()
+
+        # note if this property is not True, then model.to(device) should be called later
+        if set:
+            self.resume = resume
+            self.model = model
+            self.to_device()
+        return model

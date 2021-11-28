@@ -105,6 +105,7 @@ class PruningExperiment(TrainingExperiment):
             self.pruning = constructor(model=self.model, dataloader=dl, attack_kwargs=copy_attack_kwargs, compression=compression, device=self.device, debug=self.debug)
         else:
             x, y = next(iter(self.train_dl))
+            x, y = x.to(self.device), y.to(self.device)
             self.pruning = constructor(self.model, x, y, compression=compression)
         self.pruning.apply()
         printc("Pruning Completed", color="GREEN")
