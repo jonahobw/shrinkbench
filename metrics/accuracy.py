@@ -41,6 +41,32 @@ def correct(output, target, topk=(1,)):
         return res
 
 
+def both_correct(output1, output2, target, topk=(1,)):
+    """Similar to correct() but for 2 models.  Returns the number of predictions that both models
+    predicted correctly."""
+    with torch.no_grad():
+        maxk = max(topk)
+        # Only need to do topk for highest k, reuse for the rest
+        _, pred1 = output1.topk(k=maxk, dim=1, largest=True, sorted=True)
+        pred1 = pred1.t()
+        correct1 = pred1.eq(target.view(1, -1).expand_as(pred1)).float()
+
+        _, pred2 = output2.topk(k=maxk, dim=1, largest=True, sorted=True)
+        pred2 = pred2.t()
+        correct2 = pred2.eq(target.view(1, -1).expand_as(pred2)).float()
+
+        both_correct = correct1 * correct2
+
+        res = []
+        for k in topk:
+            correct_k1 = torch.sum(correct1[:k], dim=0)
+            correct_k2 = torch.sum(correct2[:k], dim=0)
+            correct_k = correct_k1 * correct_k2
+            correct_k = correct_k.sum(0, keepdim=True)
+            res.append(correct_k.item())
+        return res
+
+
 def accuracy(model, dataloader, topk=(1,), seed=None, loss_func=None, debug=None):
     """Compute accuracy/loss of a model over a dataloader for various topk
 

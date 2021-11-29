@@ -19,7 +19,7 @@ from cleverhans.torch.attacks.projected_gradient_descent import (
 from tqdm import tqdm
 
 from .dnn import DNNExperiment
-from ..metrics import correct
+from ..metrics import correct, both_correct
 from ..util import OnlineStats
 
 logger = logging.getLogger("attack")
@@ -42,7 +42,7 @@ class AttackExperiment(DNNExperiment):
         attack: str,
         attack_params: dict,
         path: str,
-        save_imgs: bool = False,
+        transfer_model_path: str = None,
         gpu: int = None,
         seed: int = None,
         debug: int = None,
@@ -60,7 +60,7 @@ class AttackExperiment(DNNExperiment):
         :param attack_params: parameters to pass to the attack implementation.
         :param path: the 'attack' folder to save to.  See aicas.experiments.check_folder_structure
             for the folder schema.
-        :param save_imgs: whether or not to save adversarial inputs.
+        :param transfer_model_path: the path of the transfer model.
         :param gpu: gpu to run on.
         :param seed: seed for random number generator.
         :param debug: if not None, it is an integer representing how many batches of
@@ -79,11 +79,10 @@ class AttackExperiment(DNNExperiment):
         self.attack = self.attack_constructors[self.attack_name]
         self.attack_params = attack_params
         self.path = path
-        self.save_imgs = save_imgs
         self.gpu = gpu
         self.device = None
-        self.runtime = None
         self.results = {}
+        self.transfer_results = {}
         self.generate_uid()
         self.debug = debug
 
@@ -91,6 +90,11 @@ class AttackExperiment(DNNExperiment):
         self.build_model(
             model_type, pretrained=False, resume=self.resume, dataset=dataset
         )
+
+        if transfer_model_path:
+            self.transfer_model_path = Path(transfer_model_path)
+            self.transfer_model = self.build_model(model_type, pretrained=False, resume=self.transfer_model_path, dataset=self.dataset, set=False)
+            self.transfer_model.to(self.device)
 
         # generates self.train_dataset, self.val_dataset, self.train_dl, self.val_dl
         self.build_dataloader(dataset, **dl_kwargs)
@@ -106,10 +110,10 @@ class AttackExperiment(DNNExperiment):
             "model_type",
             "train",
             "path",
-            "save_imgs",
-            "runtime",
             "gpu",
             "results",
+            "transfer_results",
+            "transfer_model_path",
         ]
         return {
             x: str(getattr(self, x))
@@ -163,10 +167,6 @@ class AttackExperiment(DNNExperiment):
             adv_acc1.add(adv_c1 / dl.batch_size)
             adv_acc5.add(adv_c5 / dl.batch_size)
 
-            if self.save_imgs:
-                # todo implement this to be used in transfer attacks
-                pass
-
             epoch_iter.set_postfix(
                 clean_acc1=clean_acc1.mean,
                 clean_acc5=clean_acc5.mean,
@@ -182,12 +182,102 @@ class AttackExperiment(DNNExperiment):
         results["adv_acc1"] = adv_acc1.mean
         results["adv_acc5"] = adv_acc5.mean
 
+        results["runtime"] = time.time() - since
+
         logger.info(results)
         self.results = results
-        self.runtime = time.time() - since
         self.save_run_information()
 
-    def save_run_information(self) -> None:
+    def run_transfer(self) -> None:
+        """
+        Run a transfer attack.
+
+        Code adapted from cleverhans tutorial
+        https://github.com/cleverhans-lab/cleverhans/blob/master/tutorials/torch/cifar10_tutorial.py
+        """
+        topk = (1, 5)
+
+        since = time.time()
+        self.model.eval()
+        self.transfer_model.to(self.device)
+        self.transfer_model.eval()
+
+        time.sleep(0.1)
+
+        if self.train:
+            dl = self.train_dl
+            data = "train"
+        else:
+            dl = self.val_dl
+            data = "test"
+
+        results = {"inputs_tested": 0,
+                   "both_correct1": 0, "both_correct5": 0,
+                   "transfer_correct1": 0, "transfer_correct5": 0,
+                   "target_correct1": 0, "target_correct5": 0}
+
+        transf_acc1 = OnlineStats()
+        transf_acc5 = OnlineStats()
+        targ_acc1 = OnlineStats()
+        targ_acc5 = OnlineStats()
+
+        epoch_iter = tqdm(dl)
+        epoch_iter.set_description(f"Transfer attack {self.attack_name} on {data} dataset")
+
+        for i, (x, y) in enumerate(epoch_iter, start=1):
+            x, y = x.to(self.device), y.to(self.device)
+
+            # generate adversarial examples using the transfer model
+            x_adv_transfer = self.attack(self.transfer_model, x, **self.attack_params)
+
+            # get predictions from transfer and target model
+            y_pred_transfer = self.transfer_model(x_adv_transfer)
+            y_pred_target = self.model(x_adv_transfer)
+
+            results["inputs_tested"] += y.size(0)
+
+            adv_c1_transfer, adv_c5_transfer = correct(y_pred_transfer, y, (1, 5))
+            results["transfer_correct1"] += adv_c1_transfer
+            results["transfer_correct5"] += adv_c5_transfer
+            transf_acc1.add(adv_c1_transfer / dl.batch_size)
+            transf_acc5.add(adv_c5_transfer / dl.batch_size)
+
+            adv_c1_target, adv_c5_target = correct(y_pred_target, y, (1, 5))
+            results["target_correct1"] += adv_c1_target
+            results["target_correct5"] += adv_c5_target
+            targ_acc1.add(adv_c1_target / dl.batch_size)
+            targ_acc5.add(adv_c5_target / dl.batch_size)
+            
+            both_correct1, both_correct5 = both_correct(y_pred_transfer, y_pred_target, y, (1, 5))
+            results["both_correct1"] += both_correct1
+            results["both_correct5"] += both_correct5
+
+            epoch_iter.set_postfix(
+                transf_acc1=transf_acc1.mean,
+                transf_acc5=transf_acc5.mean,
+                targ_acc1=targ_acc1.mean,
+                targ_acc5=targ_acc5.mean,
+            )
+
+            if self.debug is not None and i == self.debug:
+                break
+
+        results["both_correct1"] = results["both_correct1"] / results["inputs_tested"]
+        results["both_correct5"] = results["both_correct5"] / results["inputs_tested"]
+
+        results["transfer_correct1"] = results["transfer_correct1"] / results["inputs_tested"]
+        results["transfer_correct5"] = results["transfer_correct5"] / results["inputs_tested"]
+
+        results["target_correct1"] = results["target_correct1"] / results["inputs_tested"]
+        results["target_correct5"] = results["target_correct5"] / results["inputs_tested"]
+
+        results["transfer_runtime"] = time.time() - since
+
+        logger.info(results)
+        self.transfer_results = results
+        self.save_run_information(transfer=True)
+
+    def save_run_information(self, transfer=False) -> None:
         """Save the parameters of the attack to a json file."""
 
         attack_folder = Path(self.path) / 'attacks' / self.attack_name
@@ -197,9 +287,13 @@ class AttackExperiment(DNNExperiment):
         # runs of the same attack with different parameters
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_or_test = "train" if self.train else "test"
-        results_file = (
-            attack_folder / f"{train_or_test}_attack_results-{timestamp}.json"
-        )
+        results_filename = f"{train_or_test}_attack_results-{timestamp}.json"
+        results_file = attack_folder / results_filename
+
+        if transfer:
+            transfer_folder = attack_folder / "transfer_attack"
+            transfer_folder.mkdir(parents=True, exist_ok=True)
+            results_file = transfer_folder / results_filename
 
         with open(results_file, "w") as file:
             json.dump(self.save_variables(), file, indent=4)
