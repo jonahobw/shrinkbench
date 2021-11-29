@@ -81,8 +81,9 @@ class AttackExperiment(DNNExperiment):
         self.path = path
         self.gpu = gpu
         self.device = None
-        self.results = {}
-        self.transfer_results = {}
+        self.results = None
+        self.transfer_results = None
+        self.transfer_model_path = None
         self.generate_uid()
         self.debug = debug
 
