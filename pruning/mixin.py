@@ -58,19 +58,15 @@ class AdversarialGradientMixin(GradientMixin):
         assert dataloader is not None, "Dataloader must be passed for adversarial gradients over whole dataset."
         self._param_gradients = get_adv_param_gradients(model=self.model, dl=dataloader, attack=attack, device=device, batches=batches)
 
-    def param_gradients(self, dataloader=None, attack=None, device=None, only_prunable=True, batches=None):
+    def param_gradients(self, dataloader, attack, device=None, only_prunable=True, batches=None):
         if not hasattr(self, "_param_gradients"):
-            assert attack is not None, "Attack must be provided to compute adversarial gradients."
-            assert dataloader is not None, "Dataloader must be provided to compute adversarial gradients."
             self.update_gradients(dataloader=dataloader, attack=attack, device=device, batches=batches)
         if only_prunable:
             return {module: self._param_gradients[module] for module in self.prunable}
         else:
             return self._param_gradients
 
-    def module_param_gradients(self, dataloader=None, attack=None, device=None, only_prunable=True, batches=None):
+    def module_param_gradients(self, module, dataloader, attack, device=None, only_prunable=True, batches=None):
         if not hasattr(self, "_param_gradients"):
-            assert attack is not None, "Attack must be provided to compute adversarial gradients."
-            assert dataloader is not None, "Dataloader must be provided to compute adversarial gradients."
             self.update_gradients(dataloader=dataloader, attack=attack, device=device, batches=batches)
         return self._param_gradients[module]
