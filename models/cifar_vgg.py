@@ -93,8 +93,44 @@ class VGGBnDrop(nn.Module):
         self.apply(init_weights)
 
 
-def vgg_bn_drop(pretrained=True):
-    model = VGGBnDrop(num_classes=10)
+class QuantizedVGGBnDrop(VGGBnDrop):
+
+    def __init__(self, num_classes=10):
+        super(QuantizedVGGBnDrop, self).__init__(num_classes)
+        self.quant = torch.quantization.QuantStub()
+        self.dequant = torch.quantization.DeQuantStub()
+
+    def forward(self, x):
+        x = self.quant(x)
+        # Ensure scriptability
+        # super(QuantizableResNet,self).forward(x)
+        # is not scriptable
+        x = self._forward(x)
+        x = self.dequant(x)
+        return x
+
+    def _forward(self, input):
+
+        x = self.features(input)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+
+    def fuse_model(self):
+        a = 0
+        for m in self.modules():
+            if type(m) == ConvBNReLU:
+                torch.quantization.fuse_modules(m, [['conv', 'bn', 'relu']], inplace=True)
+        # fuse the linear and batchnorm layers in the classifier
+        torch.quantization.fuse_modules(self.classifier, [['1', '2']], inplace=True)
+
+
+
+def vgg_bn_drop(pretrained=True, quantized=False):
+    if quantized:
+        model = QuantizedVGGBnDrop(num_classes=10)
+    else:
+        model = VGGBnDrop(num_classes=10)
     if pretrained:
         weights = pretrained_weights('vgg_bn_drop')
         model.load_state_dict(weights)
@@ -103,9 +139,12 @@ def vgg_bn_drop(pretrained=True):
     return model
 
 
-def vgg_bn_drop_100(pretrained=True):
+def vgg_bn_drop_100(pretrained=True, quantized=False):
     # For CIFAR 100
-    model = VGGBnDrop(num_classes=100)
+    if quantized:
+        model = QuantizedVGGBnDrop(num_classes=100)
+    else:
+        model = VGGBnDrop(num_classes=100)
     if pretrained:
         weights = pretrained_weights('vgg_bn_drop_100')
         model.load_state_dict(weights)

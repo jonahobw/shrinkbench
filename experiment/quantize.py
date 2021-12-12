@@ -12,8 +12,8 @@ import time
 from pathlib import Path
 
 import torch
-import torchvision.models.quantization
-from torchvision.models import *
+import torchvision.models
+from tqdm import tqdm
 
 from .dnn import DNNExperiment
 from .. import models
@@ -25,7 +25,7 @@ logger = logging.getLogger("quantize")
 
 class QuantizeExperiment(DNNExperiment):
 
-    torchvision_constructors = {
+    torch_quantization_constructors = {
         'googlenet': torchvision.models.quantization.googlenet,
         'mobilenet_v2': torchvision.models.quantization.mobilenet_v2,
     }
@@ -41,6 +41,7 @@ class QuantizeExperiment(DNNExperiment):
             gpu: int = None,
             seed: int = None,
             debug: int = None,
+            backend = 'fbgemm',
     ):
         """
         Quantize a model.
@@ -74,35 +75,9 @@ class QuantizeExperiment(DNNExperiment):
         self.generate_uid()
         self.debug = debug
         self.save_path = None
-
-    def build_quantized_model(self) -> None:
-        """
-        Build the model.  Note that this function calls self.to_device(), which
-        sets self.device and transfers the model to self.device.
-        """
-        model = None
-
-        if hasattr(models, self.model_type):
-            model = getattr(models, model)(pretrained=pretrained)
-
-        if self.model_type in self.torchvision_constructors:
-            num_classes = datasets.num_classes[self.dataset]
-            model_args = models.model_args(model)
-            model = self.torchvision_constructors[self.model_type](pretrained=False, num_classes=num_classes, **model_args)
-
-        if not model:
-            raise ValueError(
-                f"Model {model} not available in custom models or torchvision models"
-            )
-
-        resume = Path(self.model_path)
-        assert resume.exists(), "Resume path does not exist"
-        previous = torch.load(resume, map_location=torch.device('cpu'))
-        model.load_state_dict(previous["model_state_dict"], strict=False)
-
-        model.eval()
-
-        return model
+        if backend not in torch.backends.quantized.supported_engines:
+            raise RuntimeError("Quantized backend not supported ")
+        self.backend = backend
 
     def save_variables(self):
         """Return a dictionary of variables to save."""
@@ -121,39 +96,87 @@ class QuantizeExperiment(DNNExperiment):
             for x in v
         }
 
-    def run(self, backend='fbgemm') -> None:
+    def build_float_model(self, load_state_dict=True) -> None:
         """
-        Quantize the model.
-
-        Adapted from torchvision.models.quantization.utils.quantize_model
+        Build the floating point model.
         """
-        logger.info("Quantizing model ...")
+        model = None
 
-        # generates self.train_dataset, self.val_dataset, self.train_dl, self.val_dl
-        self.build_dataloader(self.dataset, **self.dl_kwargs)
+        if hasattr(models, self.model_type):
+            model = getattr(models, self.model_type)(pretrained=False, quantized=True)
 
-        self.quantized_model = self.build_quantized_model()
+        if self.model_type in self.torch_quantization_constructors:
+            num_classes = datasets.num_classes[self.dataset]
+            model_args = models.model_args(model)
+            model = self.torch_quantization_constructors[self.model_type](pretrained=False, num_classes=num_classes, **model_args)
 
-        x, y = next(iter(self.train_dl))
-        x, y = x.to(self.device), y.to(self.device)
-        if backend not in torch.backends.quantized.supported_engines:
-            raise RuntimeError("Quantized backend not supported ")
-        torch.backends.quantized.engine = backend
-        self.quantized_model.eval()
+        if model is None:
+            raise ValueError(
+                f"Model {model} not available in custom models or torchvision models"
+            )
+
+        if load_state_dict:
+            model = self.load_state_dict(model, self.model_path)
+
+        model.eval()
+        return model
+
+    def load_state_dict(self, model, path):
+        resume = Path(path)
+        assert resume.exists(), "Resume path does not exist"
+        previous = torch.load(resume, map_location=torch.device('cpu'))
+        model.load_state_dict(previous["model_state_dict"], strict=False)
+        return model
+
+    def prepare_for_quantization(self, model):
+        torch.backends.quantized.engine = self.backend
+        model.eval()
         # Make sure that weight qconfig matches that of the serialized models
-        if backend == 'fbgemm':
-            self.quantized_model.qconfig = torch.quantization.QConfig(
+        if self.backend == 'fbgemm':
+            model.qconfig = torch.quantization.QConfig(
                 activation=torch.quantization.default_observer,
                 weight=torch.quantization.default_per_channel_weight_observer)
-        elif backend == 'qnnpack':
-            self.quantized_model.qconfig = torch.quantization.QConfig(
+        elif self.backend == 'qnnpack':
+            model.qconfig = torch.quantization.QConfig(
                 activation=torch.quantization.default_observer,
                 weight=torch.quantization.default_weight_observer)
 
-        self.quantized_model.fuse_model()
-        torch.quantization.prepare(self.quantized_model, inplace=True)
-        self.quantized_model(x)
-        torch.quantization.convert(self.quantized_model, inplace=True)
+        model.fuse_model()
+        torch.quantization.prepare(model, inplace=True)
+        return model
+
+    def quantize(self, prepped_model, dataloader=None, batches=None):
+        if dataloader is not None:
+            # calibrate model
+            dl_iter = tqdm(dataloader)
+            dl_iter.set_description("Calibrating model for quantization")
+            for i, (x, y) in enumerate(dl_iter):
+                prepped_model(x)
+                if batches is not None and i == batches:
+                    break
+        torch.quantization.convert(prepped_model, inplace=True)
+        return prepped_model
+
+
+    def run(self, load_path=None) -> None:
+        """
+        Quantize the model.
+
+        If load_path is provided, then load an existing quantized model.
+        """
+        logger.info("Quantizing model ...")
+
+        prepped_model = self.prepare_for_quantization(self.build_float_model(load_state_dict=load_path is None))
+
+        # generates self.train_dataset, self.val_dataset, self.train_dl, self.val_dl
+        self.build_dataloader(self.dataset, **self.dl_kwargs)
+        dl = self.train_dl if self.train else self.val_dl
+        self.quantized_model = self.quantize(prepped_model=prepped_model,
+                                             dataloader=dl,
+                                             batches=self.debug)
+
+        if load_path:
+            self.load_state_dict(self.quantized_model, load_path)
 
         logger.info("Quantization complete.")
 
@@ -189,6 +212,7 @@ class QuantizeExperiment(DNNExperiment):
             save_path / f"quantized.pt",
         )
         self.save_run_information()
+        return self.save_path
 
     def generate_uid(self):
         self.uid = "quantize"

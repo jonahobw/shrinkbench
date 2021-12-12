@@ -34,6 +34,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
+from torch.quantization import fuse_modules
 
 from .pretrained import pretrained_weights
 
@@ -61,6 +62,7 @@ class BasicBlock(nn.Module):
 
     def __init__(self, in_planes, planes, stride=1, option='A'):
         super(BasicBlock, self).__init__()
+        self.add_shortcut = nn.quantized.FloatFunctional()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
@@ -73,7 +75,7 @@ class BasicBlock(nn.Module):
                 For CIFAR10 ResNet paper uses option A.
                 """
                 self.shortcut = LambdaLayer(lambda x:
-                                            F.pad(x[:, :, ::2, ::2], (0, 0, 0, 0, planes//4, planes//4), "constant", 0))
+                                            F.pad(x.contiguous()[:, :, ::2, ::2], (0, 0, 0, 0, planes//4, planes//4), "constant", 0))
             elif option == 'B':
                 self.shortcut = nn.Sequential(
                      nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
@@ -83,9 +85,16 @@ class BasicBlock(nn.Module):
     def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
+        out = self.add_shortcut.add(out, self.shortcut(x))
+        # out += self.shortcut(x)
         out = F.relu(out)
         return out
+
+    def fuse_model(self):
+        torch.quantization.fuse_modules(self, [['conv1', 'bn1'], ['conv2', 'bn2']])
+        if not type(self.shortcut) == LambdaLayer and len([x for x in self.shortcut.modules()]) >= 2:
+            torch.quantization.fuse_modules(self.shortcut, [['0', '1']])
+
 
 
 class ResNet(nn.Module):
@@ -121,10 +130,51 @@ class ResNet(nn.Module):
         out = self.linear(out)
         return out
 
+class QuantizedResNet(ResNet):
+    def __init__(self, *args, **kwargs):
+        super(QuantizedResNet, self).__init__(*args, **kwargs)
+        self.quant = torch.quantization.QuantStub()
+        self.dequant = torch.quantization.DeQuantStub()
+
+    def _forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = F.avg_pool2d(out, out.size()[3])
+        out = out.view(out.size(0), -1)
+        out = self.linear(out)
+        return out
+
+    def forward(self, x):
+        x = self.quant(x)
+        # Ensure scriptability
+        # super(QuantizableResNet,self).forward(x)
+        # is not scriptable
+        x = self._forward(x)
+        x = self.dequant(x)
+        return x
+
+    def fuse_model(self):
+        r"""Fuse conv/bn/relu modules in resnet models
+
+        Fuse conv+bn+relu/ Conv+relu/conv+Bn modules to prepare for quantization.
+        Model is modified in place.  Note that this operation does not change numerics
+        and the model after modification is in floating point
+        """
+
+        fuse_modules(self, ['conv1', 'bn1'], inplace=True)
+        for m in self.modules():
+            if type(m) == BasicBlock:
+                m.fuse_model()
+
 
 def resnet_factory(filters, num_classes, name):
-    def _resnet(pretrained=True):
-        model = ResNet(BasicBlock, filters, num_classes=num_classes)
+    def _resnet(pretrained=True, quantized=False):
+        if quantized:
+            model = QuantizedResNet(BasicBlock, filters, num_classes=num_classes)
+        else:
+            model = ResNet(BasicBlock, filters, num_classes=num_classes)
         if pretrained:
             weights = pretrained_weights(name)['state_dict']
             # TODO have a better solution for DataParallel models

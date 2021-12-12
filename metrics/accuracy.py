@@ -98,8 +98,11 @@ def accuracy(model, dataloader, topk=(1,), seed=None, loss_func=None, debug=None
         # PyTorch
         torch.manual_seed(seed)
 
-    # Use same device as model
-    device = next(model.parameters()).device
+    try:
+        # Use same device as model
+        device = next(model.parameters()).device
+    except StopIteration:
+        device = 'cpu'
 
     model.eval()
 
