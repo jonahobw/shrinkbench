@@ -5,11 +5,15 @@
 import copy
 import json
 from typing import Callable
+import logging
+
 from .train import TrainingExperiment
 from .. import strategies
 from ..pruning import AdversarialPruning
 from ..metrics import model_size, flops
-from ..util import printc
+
+
+logger = logging.getLogger('pruning')
 
 
 class PruningExperiment(TrainingExperiment):
@@ -94,7 +98,7 @@ class PruningExperiment(TrainingExperiment):
 
     def apply_pruning(self, strategy: str, compression: int, attack_kwargs: {} = None) -> None:
         """Apply the pruning to the model."""
-        printc("Pruning model ...", color="GREEN")
+        logger.info("Pruning model ...")
         self.to_device()
         constructor = getattr(strategies, strategy)
         if issubclass(constructor, AdversarialPruning):
@@ -108,12 +112,12 @@ class PruningExperiment(TrainingExperiment):
             x, y = x.to(self.device), y.to(self.device)
             self.pruning = constructor(self.model, x, y, compression=compression)
         self.pruning.apply()
-        printc("Pruning Completed", color="GREEN")
+        logger.info("Pruning Completed")
 
     def run(self) -> None:
         """Run the finetuning and metrics on the model."""
         self.freeze()
-        printc(f"Running {repr(self)}", color="YELLOW")
+        logger.info(f"Running {repr(self)}")
         self.to_device()
         self.build_logging(self.train_metrics, self.path)
 
@@ -127,7 +131,7 @@ class PruningExperiment(TrainingExperiment):
         self.metrics = self.pruning_metrics()
         with open(self.path / "metrics.json", "w") as f:
             json.dump(self.metrics, f, indent=4)
-        printc(json.dumps(self.metrics, indent=4), color="GRASS")
+        logger.info(json.dumps(self.metrics, indent=4))
         summary = self.pruning.summary()
         summary_path = self.path / "masks_summary.csv"
         summary.to_csv(summary_path)

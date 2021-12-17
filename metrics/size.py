@@ -2,6 +2,7 @@
 """
 
 import numpy as np
+import torch
 from . import nonzero, dtype2bits
 
 
@@ -30,4 +31,20 @@ def model_size(model, as_bits=False):
             nz *= bits
         total_params += t
         nonzero_params += nz
+    if total_params == 0:
+        # probably a quantized model, use model.state_dict() instead of model.parameters()
+        nonzero_params = 0
+
+        for key in model.state_dict():
+            tensor = model.state_dict()[key]
+            if not isinstance(tensor, torch.Tensor):
+                continue
+            t = np.prod(tensor.shape)
+            nz = torch.sum(tensor.detach().cpu() != 0)
+            if as_bits:
+                bits = dtype2bits[tensor.dtype]
+                t *= bits
+                nz *= bits
+            total_params += t
+            nonzero_params += nz
     return int(total_params), int(nonzero_params)

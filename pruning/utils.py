@@ -64,7 +64,7 @@ def get_params(model, recurse=False):
     return params
 
 
-def get_activations(model, input):
+def get_activations(model, input, quantized=False):
 
     activations = OrderedDict()
 
@@ -76,8 +76,12 @@ def get_activations(model, input):
         assert module not in activations, \
             f"{module} already in activations"
         # TODO [0] means first input, not all models have a single input
-        activations[module] = (input[0].detach().cpu().numpy().copy(),
-                               output.detach().cpu().numpy().copy(),)
+        if not quantized:
+            activations[module] = (input[0].detach().cpu().numpy().copy(),
+                                   output.detach().cpu().numpy().copy(),)
+        else:
+            activations[module] = (input[0].detach().cpu().clone(),
+                                   output.detach().cpu().clone(),)
 
     fn, hooks = hook_applyfn(store_activations, model, forward=True)
     model.apply(fn)

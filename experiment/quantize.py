@@ -164,7 +164,10 @@ class QuantizeExperiment(DNNExperiment):
 
         If load_path is provided, then load an existing quantized model.
         """
-        logger.info("Quantizing model ...")
+        if not load_path:
+            logger.info("Quantizing model ...")
+        else:
+            logger.info(f"Loading quantized model from {load_path}")
 
         prepped_model = self.prepare_for_quantization(self.build_float_model(load_state_dict=load_path is None))
 
@@ -172,11 +175,11 @@ class QuantizeExperiment(DNNExperiment):
         self.build_dataloader(self.dataset, **self.dl_kwargs)
         dl = self.train_dl if self.train else self.val_dl
         self.quantized_model = self.quantize(prepped_model=prepped_model,
-                                             dataloader=dl,
+                                             dataloader=dl if load_path is None else None,
                                              batches=self.debug)
 
         if load_path:
-            self.load_state_dict(self.quantized_model, load_path)
+            self.quantized_model = self.load_state_dict(self.quantized_model, load_path)
 
         logger.info("Quantization complete.")
 
@@ -217,3 +220,43 @@ class QuantizeExperiment(DNNExperiment):
     def generate_uid(self):
         self.uid = "quantize"
         return self.uid
+
+    @staticmethod
+    def load_quantized_model(path, model_type, dataset, backend='fbgemm'):
+        model = None
+
+        if hasattr(models, model_type):
+            model = getattr(models, model_type)(pretrained=False, quantized=True)
+
+        if model_type in QuantizeExperiment.torch_quantization_constructors:
+            num_classes = datasets.num_classes[dataset]
+            model_args = models.model_args(model)
+            model = QuantizeExperiment.torch_quantization_constructors[model_type](pretrained=False, num_classes=num_classes, **model_args)
+
+        if model is None:
+            raise ValueError(
+                f"Model {model} not available in custom models or torchvision models"
+            )
+
+        model.eval()
+
+        torch.backends.quantized.engine = backend
+        # Make sure that weight qconfig matches that of the serialized models
+        if backend == 'fbgemm':
+            model.qconfig = torch.quantization.QConfig(
+                activation=torch.quantization.default_observer,
+                weight=torch.quantization.default_per_channel_weight_observer)
+        elif backend == 'qnnpack':
+            model.qconfig = torch.quantization.QConfig(
+                activation=torch.quantization.default_observer,
+                weight=torch.quantization.default_weight_observer)
+
+        model.fuse_model()
+        torch.quantization.prepare(model, inplace=True)
+        torch.quantization.convert(model, inplace=True)
+
+        resume = Path(path)
+        assert resume.exists(), "Resume path does not exist"
+        previous = torch.load(resume, map_location=torch.device('cpu'))
+        model.load_state_dict(previous["model_state_dict"], strict=False)
+        return model

@@ -21,6 +21,7 @@ from tqdm import tqdm
 from .dnn import DNNExperiment
 from ..metrics import correct, both_correct
 from ..util import OnlineStats
+from .quantize import QuantizeExperiment
 
 logger = logging.getLogger("attack")
 
@@ -46,6 +47,8 @@ class AttackExperiment(DNNExperiment):
         gpu: int = None,
         seed: int = None,
         debug: int = None,
+        quantized: bool = False,
+        pre_quantized_model: str=None,
     ):
         """
         Run an attack on a model.
@@ -65,6 +68,11 @@ class AttackExperiment(DNNExperiment):
         :param seed: seed for random number generator.
         :param debug: if not None, it is an integer representing how many batches of
             data to attack, instead of attacking the entire train/test dataset.
+        :param quantized: if true, the provided model path is to a quantized model.  must
+            also provide pre_quantized model.
+        :param pre_quantized_model: a path to the float version of the model (with float
+            architecture, not the quantized architecture).  The adversarial inputs will
+            be generated on this model and the quantized model's accuracy will be assesed.
         """
 
         super().__init__(seed)
@@ -86,11 +94,24 @@ class AttackExperiment(DNNExperiment):
         self.transfer_model_path = None
         self.generate_uid()
         self.debug = debug
+        self.quantized = quantized
+        self.pre_quantized_model = pre_quantized_model
 
-        # generates self.model (torch.nn.module) class variable
-        self.build_model(
-            model_type, pretrained=False, resume=self.resume, dataset=dataset
-        )
+        if not self.quantized:
+            # generates self.model (torch.nn.module) class variable
+            self.build_model(
+                model_type, pretrained=False, resume=self.resume, dataset=dataset
+            )
+            self.surrogate_model = None
+        else:
+            self.surrogate_model = self.build_model(
+                model_type, pretrained=False, resume=self.pre_quantized_model, dataset=dataset
+            )
+            self.model = QuantizeExperiment.load_quantized_model(
+                self.model_path,
+                self.model_type,
+                self.dataset,
+            )
 
         if transfer_model_path:
             self.transfer_model_path = Path(transfer_model_path)
@@ -115,6 +136,8 @@ class AttackExperiment(DNNExperiment):
             "results",
             "transfer_results",
             "transfer_model_path",
+            "quantized",
+            "pre_quantized_model",
         ]
         return {
             x: str(getattr(self, x))
@@ -154,7 +177,12 @@ class AttackExperiment(DNNExperiment):
 
         for i, (x, y) in enumerate(epoch_iter, start=1):
             x, y = x.to(self.device), y.to(self.device)
-            x_adv = self.attack(self.model, x, **self.attack_params)
+            if self.quantized:
+                x_adv = self.attack(self.surrogate_model, x, **self.attack_params)
+                x_adv, x, y = x_adv.to('cpu'), x.to('cpu'), y.to('cpu')
+                self.model.to('cpu')
+            else:
+                x_adv = self.attack(self.model, x, **self.attack_params)
             y_pred = self.model(x)  # model prediction on clean examples
             y_pred_adv = self.model(x_adv)  # model prediction on adversarial examples
 
@@ -228,9 +256,15 @@ class AttackExperiment(DNNExperiment):
         for i, (x, y) in enumerate(epoch_iter, start=1):
             x, y = x.to(self.device), y.to(self.device)
 
+            self.transfer_model.to(self.device)
+
             # generate adversarial examples using the transfer model
             x_adv_transfer = self.attack(self.transfer_model, x, **self.attack_params)
 
+            if self.quantized:
+                x_adv_transfer, y = x_adv_transfer.to('cpu'), y.to('cpu')
+                self.model.to('cpu')
+                self.transfer_model.to('cpu')
             # get predictions from transfer and target model
             y_pred_transfer = self.transfer_model(x_adv_transfer)
             y_pred_target = self.model(x_adv_transfer)
@@ -273,6 +307,7 @@ class AttackExperiment(DNNExperiment):
         results["target_correct5"] = results["target_correct5"] / results["inputs_tested"]
 
         results["transfer_runtime"] = time.time() - since
+        results["transfer_model"] = str(self.transfer_model_path)
 
         logger.info(results)
         self.transfer_results = results

@@ -65,6 +65,7 @@ class BasicBlock(nn.Module):
         self.add_shortcut = nn.quantized.FloatFunctional()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
 
@@ -83,7 +84,7 @@ class BasicBlock(nn.Module):
                 )
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         out = self.add_shortcut.add(out, self.shortcut(x))
         # out += self.shortcut(x)
@@ -91,9 +92,9 @@ class BasicBlock(nn.Module):
         return out
 
     def fuse_model(self):
-        torch.quantization.fuse_modules(self, [['conv1', 'bn1'], ['conv2', 'bn2']])
+        torch.quantization.fuse_modules(self, [['conv1', 'bn1', 'relu'], ['conv2', 'bn2']], inplace=True)
         if not type(self.shortcut) == LambdaLayer and len([x for x in self.shortcut.modules()]) >= 2:
-            torch.quantization.fuse_modules(self.shortcut, [['0', '1']])
+            torch.quantization.fuse_modules(self.shortcut, [['0', '1']], inplace=True)
 
 
 
